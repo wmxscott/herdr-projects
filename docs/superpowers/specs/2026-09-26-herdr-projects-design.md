@@ -27,6 +27,8 @@ Out of scope:
 - **Git-remote matching.** Open needs a path anyway; some projects have no remote;
   remotes collide with worktrees and monorepo subfolders.
 - **Auto-discovery.** The registry is curated.
+- **Color.** herdr labels are plain text; sidebar token styles are fixed in
+  `config.toml`, so per-workspace color would need a per-color token workaround.
 
 ## Registry
 
@@ -35,26 +37,25 @@ symlink (e.g. stowed from dotfiles).
 
 ```toml
 [[groups]]
-id = "swb"            # required, unique
-name = "swb"          # required; label prefix
+name = "swb"          # required, unique; label prefix
 icon = ""            # optional; default icon for its projects
 
 [[projects]]
 name = "edge"         # required
-group = "swb"         # optional; must reference a groups id
+group = "swb"         # optional; must reference a group name
 icon = ""            # optional if its group has an icon
 path = "~/Developer/switchbit-dev/edge"   # required
 ```
 
 Validation:
 
-- Group ids unique. Project labels unique (ignoring icon). Project paths unique
+- Group names unique. Project labels unique (ignoring icon). Project paths unique
   after resolution.
 - A project's `group` must exist.
 - Every project must end up with an icon (its own, or its group's).
 - Unknown keys are errors.
 
-A missing path is **not** a validation error; it's shown as `✗` in the picker.
+A missing path is **not** a validation error; it's shown as `󰌸` in the picker.
 
 ### Label
 
@@ -104,14 +105,20 @@ herdr's workspace order wins.
 fzf in a herdr popup, same approach as herdr-launchpad.
 
 ```
-  swb/edge          ~/Developer/switchbit-dev/edge      ●
+  swb/edge          ~/Developer/switchbit-dev/edge      
   swb/kb            ~/Developer/switchbit-dev/kb
-  quiesce/app       ~/Developer/onethingapp/app         ●
-  dotfiles          ~/.config/dotfiles                  ●
-  old-thing         ~/Developer/old-thing               ✗
+  quiesce/app       ~/Developer/onethingapp/app         
+  dotfiles          ~/.config/dotfiles                  
+  old-thing         ~/Developer/old-thing               󰌸
 ```
 
-Sorted by group, then name. `●` open, `✗` path missing.
+Sorted by group, then name. Status column:
+
+| Glyph | Codepoint | Meaning |
+|---|---|---|
+| `` | U+F444 | open, and the currently focused workspace |
+| `` | U+F4C3 | open |
+| `󰌸` | U+F0338 | path missing |
 
 | Key      | Action |
 |----------|--------|
@@ -128,7 +135,7 @@ Chained prompts in the popup:
 
 1. **Name** — default: basename of the path (add) or current name (edit).
 2. **Group** — fzf over existing groups + `none` + `+ new group`. New group
-   prompts for id, name, and icon (icon via the icon picker, skippable).
+   prompts for name and icon (icon via the icon picker, skippable).
 3. **Icon** — icon picker. Offers `use group icon` first when the group has one.
 
 Adding a path that's already registered switches to editing that project.
@@ -217,7 +224,7 @@ Units and their dependencies:
 | Hook failure | Silent; append to `$HERDR_PLUGIN_STATE_DIR/hook.log`; exit 0 |
 | Manual rename, no match | Toast: `No project for <location>` |
 | Manual rename, success | Toast: `Renamed to <label>` |
-| Open with missing path | Toast with the path; row keeps `✗` |
+| Open with missing path | Toast with the path; row keeps `󰌸` |
 | herdr call fails | Toast with herdr's error message |
 | `fzf` not on PATH | Popup prints the requirement and waits for enter |
 
