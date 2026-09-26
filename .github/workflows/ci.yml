@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.14"
+      - name: ruff
+        run: |
+          uv run ruff check
+          uv run ruff format --check
+      - name: ShellCheck
+        run: shellcheck bin/herdr-projects
+
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, ubuntu-latest]
+        python: ["3.11", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Test
+        run: uv run pytest
+      - name: Smoke test
+        run: |
+          sh bin/herdr-projects --version | grep -x 'herdr-projects [0-9.]*'
+          sh bin/herdr-projects --help
+
+  manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Parse the TOML
+        run: |
+          python - <<'PY'
+          import tomllib
+          for path in (
+              "herdr-plugin.toml",
+              "pyproject.toml",
+              ".agents/plugins/stacked-planning/config.toml",
+          ):
+              with open(path, "rb") as f:
+                  tomllib.load(f)
+              print("ok", path)
+          PY
+      - name: Check the manifest
+        run: |
+          pip install pytest
+          python -m pytest tests/test_manifest.py
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

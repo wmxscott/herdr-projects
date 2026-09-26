@@ -1,0 +1,36 @@
+id = "herdr-projects"
+name = "Projects"
+version = "0.0.0"
+min_herdr_version = "0.9.1"
+description = "A curated list of your projects: open each as a herdr workspace, labelled with its group and name."
+platforms = ["linux", "macos"]
+
+# Commands are relative to the plugin root.
+
+[[panes]]
+id = "picker"
+title = "projects"
+placement = "popup"
+command = ["sh", "bin/herdr-projects", "picker"]
+
+[[actions]]
+id = "open"
+title = "Open a project"
+contexts = ["workspace"]
+command = ["sh", "bin/herdr-projects", "popup"]
+
+[[actions]]
+id = "rename"
+title = "Label this workspace after its project"
+contexts = ["workspace"]
+command = ["sh", "bin/herdr-projects", "rename"]
+
+[[actions]]
+id = "add"
+title = "Add this directory as a project"
+contexts = ["workspace"]
+command = ["sh", "bin/herdr-projects", "popup", "--add"]
+
+[[events]]
+on = "workspace.created"
+command = ["sh", "bin/herdr-projects", "event"]
