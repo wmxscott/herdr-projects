@@ -25,6 +25,7 @@ from herdr_projects.cli import (
     Failure,
     fail,
     find,
+    find_group,
     load_registry,
     open_project,
     open_projects,
@@ -392,6 +393,10 @@ def handle(
         if selected is None:
             return ""
         kind, _, label = selected.partition(":")
+        if kind == "g" and key == "ctrl-e":
+            return flow.edit_group(label, pal)
+        if kind == "g" and key == "ctrl-d":
+            return delete_group(load_registry(), label)
         if kind != "p":
             return "Select a project"
         if key == "ctrl-e":
@@ -408,13 +413,29 @@ def handle(
 
 def delete(registry: Registry, project: Project) -> str:
     label = registry.label(project)
-    print(f"Delete {label}? [y/N] ", end="", flush=True)
-    answer = read_key()
-    print("\r\x1b[K", end="", flush=True)
-    if answer not in ("y", "Y"):
+    if not confirm(f"Delete {label}?"):
         return ""
     store(Registry(registry.groups, tuple(p for p in registry.projects if p != project)))
     return f"Deleted {label}"
+
+
+def delete_group(registry: Registry, name: str) -> str:
+    group = find_group(registry, name)
+    count = sum(p.group == name for p in registry.projects)
+    if count:
+        noun = "project" if count == 1 else "projects"
+        return Problem(f"{name} has {count} {noun}; move or delete them first")
+    if not confirm(f"Delete group {name}?"):
+        return ""
+    store(Registry(tuple(g for g in registry.groups if g != group), registry.projects))
+    return f"Deleted group {name}"
+
+
+def confirm(question: str) -> bool:
+    print(f"{question} [y/N] ", end="", flush=True)
+    answer = read_key()
+    print("\r\x1b[K", end="", flush=True)
+    return answer in ("y", "Y")
 
 
 def edit_registry() -> str:

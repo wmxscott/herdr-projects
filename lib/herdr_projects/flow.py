@@ -8,10 +8,19 @@ from __future__ import annotations
 import os
 import subprocess
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 from herdr_projects import theme
-from herdr_projects.cli import Failure, addable, find, load_registry, registered, store
+from herdr_projects.cli import (
+    Failure,
+    addable,
+    find,
+    find_group,
+    load_registry,
+    registered,
+    store,
+)
 from herdr_projects.registry import Group, Project, Registry, collapse_home
 from herdr_projects.theme import Palette
 
@@ -32,10 +41,14 @@ class Cancelled(Exception):
     pass
 
 
-def icon_rows(registry: Registry, fallback: str | None = None, skip: bool = False) -> list[str]:
+def icon_rows(
+    registry: Registry, fallback: str | None = None, skip: bool = False, keep: str | None = None
+) -> list[str]:
     """The rows before glyphs.tsv's: `<glyph>\\t<text>`, with a third field for a row's value
     when it isn't the glyph."""
-    rows = [" \tno icon\t"] if skip else []
+    rows = [f"{keep}\tkeep current"] if keep else []
+    if skip:
+        rows.append(" \tno icon\t")
     if fallback:
         rows.append(f"{fallback}\tuse group icon\t")
     users: dict[str, list[str]] = {}
@@ -75,6 +88,15 @@ def updated(
     return Registry(groups, (*projects, project))
 
 
+def regrouped(registry: Registry, old: Group, group: Group) -> Registry:
+    """`old` replaced by `group`, its projects moved along with it."""
+    groups = tuple(group if g == old else g for g in registry.groups)
+    projects = tuple(
+        replace(p, group=group.name) if p.group == old.name else p for p in registry.projects
+    )
+    return Registry(groups, projects)
+
+
 def add(pal: Palette = theme.LATTE) -> str:
     registry = load_registry()
     path = addable()
@@ -110,6 +132,22 @@ def change(
     return f"{'Updated' if old else 'Added'} {result.label(project)}"
 
 
+def edit_group(name: str, pal: Palette = theme.LATTE) -> str:
+    registry = load_registry()
+    old = find_group(registry, name)
+    header = theme.header(pal, [theme.pill("Edit group", old.name, pal)], HINTS)
+    try:
+        name = ask(header, "Name: ", old.name)
+        icon = pick_icon(registry, header, "Icon: ", skip=True, keep=old.icon, current=old.icon)
+    except Cancelled:
+        return ""
+    result = regrouped(registry, old, Group(name=name, icon=icon))
+    if result == registry:
+        return ""
+    store(result)
+    return f"Updated {icon} {name}" if icon else f"Updated {name}"
+
+
 def pick_group(
     registry: Registry, header: str, current: str | None
 ) -> tuple[str | None, Group | None]:
@@ -132,8 +170,9 @@ def pick_icon(
     fallback: str | None = None,
     skip: bool = False,
     current: str | None = None,
+    keep: str | None = None,
 ) -> str | None:
-    rows = icon_rows(registry, fallback, skip)
+    rows = icon_rows(registry, fallback, skip, keep)
     at = position(rows, icon_value, current)
     glyphs = GLYPHS.read_text(encoding="utf-8").partition("\n")[2]
     text = "".join(f"{row}\n" for row in rows) + glyphs

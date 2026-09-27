@@ -10,6 +10,7 @@ from pathlib import Path
 from herdr_projects import PLUGIN_ID, VERSION, herdr
 from herdr_projects.herdr import HerdrError, Workspace
 from herdr_projects.registry import (
+    Group,
     Project,
     Registry,
     RegistryError,
@@ -88,6 +89,13 @@ def find(registry: Registry, target: str) -> Project:
     if not named:
         raise Failure(f"No project {target}")
     return named[0]
+
+
+def find_group(registry: Registry, name: str) -> Group:
+    group = registry.group(name)
+    if not group:
+        raise Failure(f'No group "{name}"')
+    return group
 
 
 def status(project: Project, found: dict[Project, Workspace]) -> str | None:
@@ -190,8 +198,8 @@ def cmd_add(args: argparse.Namespace) -> int:
     existing = registered(registry, path)
     if existing:
         raise Failure(f"Already registered as {registry.label(existing)}")
-    if args.group and not registry.group(args.group):
-        raise Failure(f'No group "{args.group}"')
+    if args.group:
+        find_group(registry, args.group)
     project = Project(
         name=args.name or os.path.basename(path),
         group=args.group or None,
