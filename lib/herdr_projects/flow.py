@@ -10,8 +10,10 @@ import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
+from herdr_projects import theme
 from herdr_projects.cli import Failure, addable, find, load_registry, registered, store
 from herdr_projects.registry import Group, Project, Registry, collapse_home
+from herdr_projects.theme import Palette
 
 GLYPHS = Path(__file__).with_name("glyphs.tsv")
 LAYOUT = (
@@ -23,6 +25,7 @@ LAYOUT = (
     "--no-info",
 )
 NONE, NEW = "", "+"
+HINTS = "\u21b5 accept · esc discards"
 
 
 class Cancelled(Exception):
@@ -72,21 +75,24 @@ def updated(
     return Registry(groups, (*projects, project))
 
 
-def add() -> str:
+def add(pal: Palette = theme.LATTE) -> str:
     registry = load_registry()
     path = addable()
-    return change(registry, path, registered(registry, path))
+    return change(registry, path, registered(registry, path), pal)
 
 
-def edit(label: str) -> str:
+def edit(label: str, pal: Palette = theme.LATTE) -> str:
     registry = load_registry()
     project = find(registry, label)
-    return change(registry, project.path, project)
+    return change(registry, project.path, project, pal)
 
 
-def change(registry: Registry, path: str, old: Project | None = None) -> str:
+def change(
+    registry: Registry, path: str, old: Project | None = None, pal: Palette = theme.LATTE
+) -> str:
     """Run the flow for a new project at `path`, or for `old`; returns the notice."""
-    header = f"{'Edit' if old else 'Add'} {collapse_home(path)} · esc discards"
+    title = theme.pill("Edit" if old else "Add", collapse_home(path), pal)
+    header = theme.header(pal, [title], HINTS)
     try:
         name = ask(header, "Name: ", old.name if old else os.path.basename(path))
         group, new = pick_group(registry, header, old.group if old else None)
@@ -156,7 +162,7 @@ def select(rows: list[str] | str, header: str, prompt: str, at: int = 0, *args: 
 
 def fzf(text: str, header: str, prompt: str, *args: str) -> str:
     """The first line fzf prints: the selection, or the query with --print-query."""
-    command = ["fzf", "--header", header, "--prompt", prompt, *LAYOUT, *args]
+    command = ["fzf", "--ansi", "--header", header, "--prompt", prompt, *LAYOUT, *args]
     done = subprocess.run(command, input=text, stdout=subprocess.PIPE, encoding="utf-8")
     if done.returncode == 130:
         raise Cancelled

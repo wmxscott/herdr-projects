@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | draft |
+| **Status** | active — Stack A landed, Stack B in progress |
 | **Updated** | 2026-09-26 |
 | **Tracker** | — |
 | **Related** | [design spec](../superpowers/specs/2026-09-26-herdr-projects-design.md), [herdr-launchpad](https://github.com/wmxscott/herdr-launchpad), [herdr-wkt](https://github.com/wmxscott/herdr-wkt), [#1](https://github.com/wmxscott/herdr-projects/pull/1) |
@@ -16,20 +16,20 @@ location gets — or can be reset to — that project's label.
 
 ### Done when
 
-- [ ] `herdr plugin install wmxscott/herdr-projects` succeeds on macOS against herdr ≥ 0.9.1.
-- [ ] In a live herdr session, picking a registered project in the popup creates a
+- [x] `herdr plugin install wmxscott/herdr-projects` succeeds on macOS against herdr ≥ 0.9.1.
+- [x] In a live herdr session, picking a registered project in the popup creates a
       workspace whose cwd is the project path and whose label is its registry label;
       picking it again focuses that workspace instead of creating a second one.
-- [ ] `cd` into a registered project's subfolder, run the `rename` action: the
+- [x] `cd` into a registered project's subfolder, run the `rename` action: the
       workspace label changes to the project's label and a toast confirms it.
-- [ ] A workspace created in a registered path — both via `herdr workspace create --cwd`
+- [x] A workspace created in a registered path — both via `herdr workspace create --cwd`
       and via herdr's own UI — is relabelled automatically, and a manual rename made
       afterwards survives switching away and back.
-- [ ] A linked worktree workspace (from `wkt new`) inside a registered repo is never
+- [x] A linked worktree workspace (from `wkt new`) inside a registered repo is never
       relabelled.
-- [ ] A project can be added, edited (including a new group and an icon from the glyph
+- [x] A project can be added, edited (including a new group and an icon from the glyph
       picker) and deleted from the popup, and `projects.toml` stays a symlink when stowed.
-- [ ] CI (lint, tests on macOS + Linux, manifest) is green and required on `main`.
+- [x] CI (lint, tests on macOS + Linux, manifest) is green and required on `main`.
 
 ## Settled — do not re-derive
 
@@ -379,6 +379,85 @@ README (install, `projects.toml` reference, suggested keybindings, screenshot),
 hand and ticked.
 *Split seam:* none needed.
 
+### Stack B — 1.0 polish
+
+Asked for by the user after walking Stack A's Done-when (2026-09-27): full-width rows,
+projects grouped under their group like pr-tracker's stacks, editing a group, and
+pr-tracker's look (Catppuccin Latte/Macchiato, same light/dark switch), made pretty
+(dim paths, coloured status icons). The first release is **1.0.0**, not 0.1.0.
+
+- **Base:** `main`
+- **Owns:** `**`
+- **Independent of:** —
+- **Depends on:** Stack A
+
+**Settled for Stack B**
+
+**S13 — Look is pr-tracker's.** Copy from `wmxscott/pr-tracker` `src/pr_tracker/picker.py`:
+the `LATTE`/`MACCHIATO` palette dicts, 24-bit `sgr`/`bg`/`RESET`, `visible_len` (ANSI
+stripped), header pills and the dim hint line, `│`/`└` spine in overlay0 dim, glyphs as
+`\u` escapes. Hue is for status only; chrome uses the neutral ramp. fzf gets `--ansi` and
+no `--color` (pr-tracker passes none).
+
+**S14 — Light/dark as pr-tracker.** `HERDR_PROJECTS_THEME` (`light`|`dark`|`auto`), else
+the theme-monitor file `${XDG_DATA_HOME:-~/.local/share}/theme-monitor/theme-change.trigger`,
+else macOS `defaults read -g AppleInterfaceStyle`, else light. Resolved once per popup.
+No config file key (`projects.toml` stays a pure registry).
+
+**S15 — Rows are rendered in the popup.** Full width needs the popup's own columns, which
+the action can't know, so the action precomputes statuses (not rendered rows) and the
+popup renders at its terminal width. Status column right-aligned; label/path truncate.
+
+**S16 — Group rows.** Each group (including an empty one) is a selectable header row:
+chevron, group icon, name, right-aligned `N projects · k open`. Its projects follow with a
+one-column spine. Ungrouped projects sit flush left after the groups. `enter` on a header
+folds/unfolds it (in-process state, like pr-tracker). `ctrl-e` on a header edits the
+group: name (renaming rewrites its projects' `group`) and icon (keep / none / picker).
+`ctrl-d` on an empty group's header deletes it; on a non-empty one it says so.
+
+| Phase | Lands | Depends on |
+|---|---|---|
+| B1 | Theme + full-width, coloured rows | A8 |
+| B2 | Group header rows, spine, fold | B1 |
+| B3 | Edit and delete a group | B2 |
+| B4 | Docs, 1.0.0 | B3 |
+
+Copyable checklist:
+
+- [ ] B1 — Theme and full-width rows
+- [ ] B2 — Grouped rows
+- [ ] B3 — Group editing
+- [ ] B4 — Docs and 1.0.0
+
+**B1 — Theme and full-width rows**
+`theme.py` (S13, S14). Picker rows full width (S15): icon, bare label in text bold, `~path`
+in overlay0 dim, status glyph coloured (active green bold, open blue, missing red). Header
+as pr-tracker (blank line, key pills, dim hint line). The add/edit flow's fzf screens get
+the same header treatment and `--ansi`.
+*Shippable when:* tests for theme precedence, width (row visible width == list width for
+several widths; wide/astral glyphs; truncation), colour spans per status in both themes;
+by hand the popup fills its width in light and dark.
+*Split seam:* flow screens after the main list.
+
+**B2 — Grouped rows**
+S16 minus editing: header rows, spine, ungrouped after groups, fold on `enter`, hidden id
+field (`g:<name>` / `p:<bare label>`) so keys know what's selected.
+*Shippable when:* render tests (order, spine `│`/`└`, counts, empty group, fold) and key
+dispatch on header vs project rows pass.
+*Split seam:* fold after static grouping.
+
+**B3 — Group editing**
+`ctrl-e`/`ctrl-d` on a header per S16, through `registry.save` validation.
+*Shippable when:* flow tests: rename rewrites members, icon keep/none/new, esc discards,
+duplicate name refused, delete empty vs non-empty.
+*Split seam:* none needed.
+
+**B4 — Docs and 1.0.0**
+README (grouped picker rendering, theme switch, group editing), CHANGELOG `1.0.0`
+(replacing the unreleased 0.1.0 entry), version 1.0.0; tag `v1.0.0` after the user's check.
+*Shippable when:* versions agree; user walks the popup in light and dark.
+*Split seam:* none needed.
+
 ## Forest from the trees
 
 ### Challenge
@@ -431,3 +510,5 @@ own diff.
 - 2026-09-26 — phase A5 landed as #6 (nerd-fonts 3.5.1)
 - 2026-09-26 — phase A6 landed as #7
 - 2026-09-26 — phase A7 landed as #8
+- 2026-09-26 — phase A8 landed as #9; Done-when walked by the user and ticked (2026-09-27)
+- 2026-09-27 — Stack B added (1.0 polish); `v0.1.0` tag withdrawn, first release is 1.0.0

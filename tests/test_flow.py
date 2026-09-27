@@ -4,7 +4,7 @@ import os
 
 import pytest
 from conftest import in_context, one_workspace, registry_for, registry_path, ws
-from herdr_projects import cli, flow, picker
+from herdr_projects import cli, flow, picker, theme
 from herdr_projects.flow import Cancelled
 from herdr_projects.registry import Group, Project, Registry, load
 
@@ -155,7 +155,9 @@ def test_add_with_a_group_and_its_icon(root, here, script):
     assert added(root) == [Project(name="unregistered", group="work", path=str(here))]
     assert calls[0]["prompt"] == "Name: "
     assert calls[0]["args"][-2:] == ("--query", "unregistered")
-    assert calls[0]["header"].startswith("Add ~/unregistered")
+    assert calls[0]["header"] == theme.header(
+        theme.LATTE, [theme.pill("Add", "~/unregistered", theme.LATTE)], flow.HINTS
+    )
     assert calls[1]["text"].split("\n")[2] == "   none\t"
     assert "load:pos(3)" in calls[1]["args"]
 
@@ -218,7 +220,7 @@ def test_add_on_a_registered_path_edits_it(root, herdr, monkeypatch, script):
     answers, calls = script
     answers += ["", row("=home"), row("used by gone")]
     assert flow.add() == "Updated G home/notes"
-    assert calls[0]["header"].startswith("Edit ~/notes")
+    assert theme.pill("Edit", "~/notes", theme.LATTE) in calls[0]["header"]
     assert calls[0]["args"][-2:] == ("--query", "notes")
     assert "load:pos(3)" in calls[1]["args"]
     assert "load:pos(5)" in calls[2]["args"]
@@ -234,6 +236,13 @@ def test_edit_renames_and_takes_the_group_icon(root, herdr, script):
     projects = load(registry_path()).projects
     assert Project(name="api2", group="work", path=str(root / "api")) in projects
     assert "work/api" not in [p.bare_label for p in projects]
+
+
+def test_the_flow_is_drawn_in_the_popups_palette(root, herdr, script):
+    answers, calls = script
+    answers += [Cancelled]
+    assert flow.edit("work/api", theme.MACCHIATO) == ""
+    assert theme.pill("Edit", "~/api", theme.MACCHIATO) in calls[0]["header"]
 
 
 def test_edit_that_changes_nothing_leaves_the_file_alone(root, herdr, script):
@@ -289,7 +298,7 @@ def test_ask_reads_the_query(fzf_bin, monkeypatch):
     monkeypatch.setenv("FZF_EXIT", "1")
     assert flow.ask("head", "Name: ", "default") == "typed"
     args = (fzf_bin / "args").read_text().split("\n")
-    assert {"--print-query", "--disabled"} <= set(args)
+    assert {"--print-query", "--disabled", "--ansi"} <= set(args)
     assert (fzf_bin / "input").read_text() == ""
 
 
