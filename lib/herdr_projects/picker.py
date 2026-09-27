@@ -89,10 +89,9 @@ SEARCH = (
 UNSEARCHED = "\t\t\t"
 
 KEYS = ("ctrl-r", "ctrl-a", "ctrl-e", "ctrl-d", "ctrl-o")
-PILLS = ((ICO_ENTER, "open"), ("^a", "add"), ("^e", "edit"))
-HINTS = "^r rename · ^d delete · ^o edit file · esc close"
-INVALID_PILLS = (("^o", "edit projects.toml"),)
-INVALID_HINTS = "esc close"
+# esc close doesn't fit a narrow popup's header.
+HINTS = f"{ICO_ENTER} open · ^a add · ^e edit · ^r rename · ^d delete · ^o edit file"
+INVALID_HINTS = "^o edit projects.toml · esc close"
 
 
 class Problem(str):
@@ -273,10 +272,9 @@ def invalid_row(message: str, pal: Palette, width: int) -> str:
 
 
 def header(pal: Palette, valid: bool, notice: str = "") -> str:
-    pills = [theme.pill(key, label, pal) for key, label in (PILLS if valid else INVALID_PILLS)]
     if notice:
         notice = paint(notice, pal["red"] if isinstance(notice, Problem) else pal["green"])
-    return theme.header(pal, pills, HINTS if valid else INVALID_HINTS, notice)
+    return theme.header(pal, HINTS if valid else INVALID_HINTS, notice)
 
 
 def statuses(registry: Registry) -> dict[str, str]:

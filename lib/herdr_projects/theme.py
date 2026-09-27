@@ -1,4 +1,4 @@
-"""The picker's look, copied from pr-tracker: Catppuccin Latte or Macchiato, key pills.
+"""The picker's look, copied from pr-tracker: Catppuccin Latte or Macchiato, a dim hint line.
 
 Hue is for status only; chrome draws from the neutral ramp.
 """
@@ -50,10 +50,6 @@ MACCHIATO: Palette = {
     "blue": (138, 173, 244),
 }
 
-PILL_L = ""  # nf-ple-left_half_circle_thick
-PILL_R = ""  # nf-ple-right_half_circle_thick
-PILL_SEP = ""  # nf-pl-left_hard_divider
-
 RESET = "\x1b[0m"
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -64,10 +60,6 @@ def sgr(rgb: RGB, bold: bool = False, dim: bool = False) -> str:
         attrs.append("2")
     attrs.append(f"38;2;{rgb[0]};{rgb[1]};{rgb[2]}")
     return f"\x1b[{';'.join(attrs)}m"
-
-
-def bg(rgb: RGB) -> str:
-    return f"\x1b[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
 
 
 def paint(text: str, rgb: RGB, bold: bool = False, dim: bool = False) -> str:
@@ -121,19 +113,10 @@ def palette(theme: str) -> Palette:
     return MACCHIATO if theme == "dark" else LATTE
 
 
-def pill(key: str, label: str, pal: Palette) -> str:
-    """A rounded chip: the key on its own darker segment, then the label."""
-    key_bg, body_bg = pal["surface1"], pal["surface"]
-    return (
-        f"{sgr(key_bg)}{PILL_L}{RESET}"
-        f"{bg(key_bg)}{sgr(pal['text'], bold=True)} {key} {RESET}"
-        f"{bg(body_bg)}{sgr(key_bg)}{PILL_SEP}{RESET}"
-        f"{bg(body_bg)}{sgr(pal['subtext'])} {label} {RESET}"
-        f"{sgr(body_bg)}{PILL_R}{RESET}"
-    )
-
-
-def header(pal: Palette, pills: list[str], hints: str, notice: str = "") -> str:
-    """A blank row, the pills, the dim hints, then the notice or another blank row."""
-    lines = [" ", "  ".join(pills), paint(hints, pal["overlay0"], dim=True), notice or " "]
-    return "\n".join(lines)
+def header(pal: Palette, hints: str, notice: str = "", title: str = "") -> str:
+    """A blank row, the dim hints after the title if there is one, then the notice or another
+    blank row."""
+    line = paint(f" · {hints}" if title else hints, pal["overlay0"], dim=True)
+    if title:
+        line = paint(title, pal["text"], bold=True) + line
+    return "\n".join([" ", line, notice or " "])

@@ -162,9 +162,9 @@ def test_add_with_a_group_and_its_icon(root, here, script):
     assert added(root) == [Project(name="unregistered", group="work", path=str(here))]
     assert calls[0]["prompt"] == "Name: "
     assert calls[0]["args"][-2:] == ("--query", "unregistered")
-    assert calls[0]["header"] == theme.header(
-        theme.LATTE, [theme.pill("Add", "~/unregistered", theme.LATTE)], flow.HINTS
-    )
+    assert calls[0]["header"] == theme.header(theme.LATTE, flow.HINTS, title="Add ~/unregistered")
+    hints = theme.strip(calls[0]["header"]).split("\n")[1]
+    assert hints == "Add ~/unregistered · \u21b5 accept · esc discards"
     assert calls[1]["text"].split("\n")[2] == "   none\t"
     assert "load:pos(3)" in calls[1]["args"]
 
@@ -227,7 +227,7 @@ def test_add_on_a_registered_path_edits_it(root, herdr, monkeypatch, script):
     answers, calls = script
     answers += ["", row("=home"), row("used by gone")]
     assert flow.add() == "Updated G home/notes"
-    assert theme.pill("Edit", "~/notes", theme.LATTE) in calls[0]["header"]
+    assert theme.strip(calls[0]["header"]).split("\n")[1] == f"Edit ~/notes · {flow.HINTS}"
     assert calls[0]["args"][-2:] == ("--query", "notes")
     assert "load:pos(3)" in calls[1]["args"]
     assert "load:pos(5)" in calls[2]["args"]
@@ -249,7 +249,7 @@ def test_the_flow_is_drawn_in_the_popups_palette(root, herdr, script):
     answers, calls = script
     answers += [Cancelled]
     assert flow.edit("work/api", theme.MACCHIATO) == ""
-    assert theme.pill("Edit", "~/api", theme.MACCHIATO) in calls[0]["header"]
+    assert calls[0]["header"] == theme.header(theme.MACCHIATO, flow.HINTS, title="Edit ~/api")
 
 
 def test_edit_that_changes_nothing_leaves_the_file_alone(root, herdr, script):
@@ -359,9 +359,7 @@ def test_edit_group_renames_it_and_its_projects(root, herdr, script):
     assert labels == ["gone", "notes", "home/web", "job/api", "job/web"]
     assert [c["prompt"] for c in calls] == ["Name: ", "Icon: "]
     assert calls[0]["args"][-2:] == ("--query", "work")
-    assert calls[0]["header"] == theme.header(
-        theme.LATTE, [theme.pill("Edit group", "work", theme.LATTE)], flow.HINTS
-    )
+    assert calls[0]["header"] == theme.header(theme.LATTE, flow.HINTS, title="Edit group work")
 
 
 def test_edit_group_starts_on_keep_current(root, herdr, script):

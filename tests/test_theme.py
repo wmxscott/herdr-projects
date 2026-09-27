@@ -80,29 +80,19 @@ def test_palette():
 def test_paint_and_strip():
     text = theme.paint("hi", (1, 2, 3), bold=True, dim=True)
     assert text == "\x1b[1;2;38;2;1;2;3mhi\x1b[0m"
-    assert theme.strip(text + theme.bg((4, 5, 6)) + "!") == "hi!"
+    assert theme.strip(text + "\x1b[48;2;4;5;6m!") == "hi!"
 
 
-def test_pill_is_key_then_label_between_caps():
-    text = theme.pill("^a", "add", theme.LATTE)
-    assert theme.strip(text) == f"{theme.PILL_L} ^a {theme.PILL_SEP} add {theme.PILL_R}"
-    assert theme.bg(theme.LATTE["surface1"]) in text
+def test_header_is_blank_dim_hints_then_notice_or_blank():
+    hints = theme.paint("^a add · esc close", theme.LATTE["overlay0"], dim=True)
+    assert theme.header(theme.LATTE, "^a add · esc close").split("\n") == [" ", hints, " "]
+    assert theme.header(theme.LATTE, "^a add · esc close", "Added").split("\n")[2] == "Added"
 
 
-def test_header_is_blank_pills_hints_then_notice_or_blank():
-    pills = [theme.pill("^a", "add", theme.LATTE), theme.pill("^e", "edit", theme.LATTE)]
-    lines = theme.header(theme.LATTE, pills, "esc close").split("\n")
-    assert [theme.strip(line) for line in lines] == [
-        " ",
-        theme.strip("  ".join(pills)),
-        "esc close",
-        " ",
-    ]
-    assert lines[2] == theme.paint("esc close", theme.LATTE["overlay0"], dim=True)
-    assert theme.header(theme.LATTE, pills, "esc close", "Added").split("\n")[3] == "Added"
-
-
-def test_glyphs_are_single_codepoints():
-    glyphs = [value for name, value in vars(theme).items() if name.startswith("PILL_")]
-    assert len(glyphs) == 3
-    assert all(len(g) == 1 for g in glyphs)
+@pytest.mark.parametrize("pal", [theme.LATTE, theme.MACCHIATO])
+def test_a_title_leads_the_hints_in_text_colour(pal):
+    line = theme.header(pal, "esc discards", title="Add ~/api").split("\n")[1]
+    assert line == (
+        theme.paint("Add ~/api", pal["text"], bold=True)
+        + theme.paint(" · esc discards", pal["overlay0"], dim=True)
+    )

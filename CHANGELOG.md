@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+
+- The picker's key hints are one line, without pills. The add and edit steps lead it with what they're changing.
+
 ## [1.0.0] - 2026-09-27
 
 ### Added
