@@ -53,16 +53,17 @@ jobs:
           for path in (
               "herdr-plugin.toml",
               "pyproject.toml",
+              "examples/projects.toml",
               ".agents/plugins/stacked-planning/config.toml",
           ):
               with open(path, "rb") as f:
                   tomllib.load(f)
               print("ok", path)
           PY
-      - name: Check the manifest
+      - name: Check the manifest and example registry
         run: |
           pip install pytest
-          python -m pytest tests/test_manifest.py
+          python -m pytest tests/test_manifest.py tests/test_registry.py::test_example_loads
 
   secrets:
     runs-on: ubuntu-latest
