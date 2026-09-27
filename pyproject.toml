@@ -2,7 +2,7 @@
 # no dependencies beyond Python 3.11+ and fzf.
 [project]
 name = "herdr-projects"
-version = "0.1.0"
+version = "1.0.0"
 requires-python = ">=3.11"
 
 [tool.uv]

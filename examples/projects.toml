@@ -14,6 +14,11 @@ icon = "\uf0b1" # fa-briefcase
 name = "oss"
 icon = "\uf401" # oct-repo
 
+# No projects yet. The picker still shows its header, where ctrl-d deletes it.
+[[groups]]
+name = "sandbox"
+icon = "\uf499" # oct-beaker
+
 # No icon of its own, so it takes its group's.
 [[projects]]
 name = "api"
