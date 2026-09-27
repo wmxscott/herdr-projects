@@ -128,6 +128,8 @@ Errors (collect all, report with `groups[i]`/`projects[i]` locations):
 - duplicate group name; project `group` not found
 - project with no icon after group fallback
 - duplicate label (ignoring icon); duplicate resolved path
+- `path` not absolute after `~` expansion (amended in A2: a plugin's cwd is its root, so
+  relative paths have no meaning)
 
 A path that doesn't exist is **not** an error.
 
