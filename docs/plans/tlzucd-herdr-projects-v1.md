@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | active — Stack A landed, Stack B in progress |
+| **Status** | done — released as v1.0.0 |
 | **Updated** | 2026-09-26 |
 | **Tracker** | — |
 | **Related** | [design spec](../superpowers/specs/2026-09-26-herdr-projects-design.md), [herdr-launchpad](https://github.com/wmxscott/herdr-launchpad), [herdr-wkt](https://github.com/wmxscott/herdr-wkt), [#1](https://github.com/wmxscott/herdr-projects/pull/1) |
@@ -287,14 +287,14 @@ it's small enough that parallelism buys nothing.
 
 Copyable checklist:
 
-- [ ] A1 — Scaffold
-- [ ] A2 — Registry
-- [ ] A3 — Resolution and herdr wrapper
-- [ ] A4 — CLI commands and event hook
-- [ ] A5 — Glyph data
-- [ ] A6 — Picker main list
-- [ ] A7 — Add/edit and icon picker
-- [ ] A8 — Docs and 0.1.0
+- [x] A1 — Scaffold
+- [x] A2 — Registry
+- [x] A3 — Resolution and herdr wrapper
+- [x] A4 — CLI commands and event hook
+- [x] A5 — Glyph data
+- [x] A6 — Picker main list
+- [x] A7 — Add/edit and icon picker
+- [x] A8 — Docs and 0.1.0
 
 **A1 — Scaffold**
 - `herdr-plugin.toml`: id `herdr-projects`, `min_herdr_version = "0.9.1"`, platforms
@@ -424,10 +424,10 @@ group: name (renaming rewrites its projects' `group`) and icon (keep / none / pi
 
 Copyable checklist:
 
-- [ ] B1 — Theme and full-width rows
-- [ ] B2 — Grouped rows
-- [ ] B3 — Group editing
-- [ ] B4 — Docs and 1.0.0
+- [x] B1 — Theme and full-width rows
+- [x] B2 — Grouped rows
+- [x] B3 — Group editing
+- [x] B4 — Docs and 1.0.0
 
 **B1 — Theme and full-width rows**
 `theme.py` (S13, S14). Picker rows full width (S15): icon, bare label in text bold, `~path`
@@ -481,8 +481,8 @@ container) is not a linked worktree even if its active pane is inside one.
 | B5 | Search, weight, counts, status glyphs (S17, S18) | B4 |
 | B6 | Worktree-aware status (S19) | B5 |
 
-- [ ] B5 — Picker feedback
-- [ ] B6 — Worktree-aware status
+- [x] B5 — Picker feedback
+- [x] B6 — Worktree-aware status
 
 **B5 — Picker feedback**
 *Shippable when:* tests: a query can't match a header/count/glyph and does match
@@ -553,3 +553,4 @@ own diff.
 - 2026-09-27 — phase B3 landed as #12
 - 2026-09-27 — phase B4 landed as #13; user feedback added as B5/B6 (S17–S19)
 - 2026-09-27 — phase B5 landed as #14
+- 2026-09-27 — phase B6 landed as #15; user walked B5/B6 and approved; released as v1.0.0
