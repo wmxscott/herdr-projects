@@ -15,7 +15,7 @@ from conftest import (
     toasts,
     ws,
 )
-from herdr_projects import cli, picker
+from herdr_projects import cli, flow, picker
 from herdr_projects.herdr import Workspace
 from herdr_projects.picker import cell_width
 from herdr_projects.registry import Group, Project, Registry, load
@@ -163,10 +163,11 @@ def test_ctrl_r_without_a_project_stays_open(root, herdr, monkeypatch):
     assert changes(herdr) == []
 
 
-@pytest.mark.parametrize(("key", "notice"), [("ctrl-a", "Add"), ("ctrl-e", "Edit")])
-def test_add_and_edit_are_not_here_yet(root, herdr, key, notice):
-    assert picker.handle(key, "notes") == f"{notice}: coming in A7"
-    assert herdr.calls() == []
+def test_ctrl_a_adds_and_ctrl_e_edits_the_selection(root, herdr, monkeypatch):
+    monkeypatch.setattr(flow, "add", lambda: "Added")
+    monkeypatch.setattr(flow, "edit", lambda label: f"Updated {label}")
+    assert picker.handle("ctrl-a", "notes") == "Added"
+    assert picker.handle("ctrl-e", "notes") == "Updated notes"
 
 
 @pytest.mark.parametrize("answer", ["y", "Y"])
@@ -337,12 +338,13 @@ def test_run_starts_from_precomputed_rows_then_rebuilds(root, herdr, session, mo
     answers, calls = session
     path = precomputed(monkeypatch, ["cached\tnotes"])
     open_workspaces(herdr)
+    monkeypatch.setattr(flow, "add", lambda: "Added")
     answers += [("ctrl-a", "notes"), None]
     assert picker.run() == 0
     assert calls[0] == (["cached\tnotes"], picker.HELP)
     assert not path.exists()
     assert calls[1][0] == picker.build()[0]
-    assert calls[1][1] == f"Add: coming in A7\n{picker.HELP}"
+    assert calls[1][1] == f"Added\n{picker.HELP}"
 
 
 def test_run_closes_after_open(root, herdr, session):
@@ -380,14 +382,17 @@ def test_run_shows_an_invalid_registry(root, herdr, session):
 
 
 @pytest.mark.parametrize("how", ["flag", "env"])
-def test_run_for_add_says_it_is_coming(root, herdr, session, monkeypatch, how):
+def test_run_for_add_starts_in_the_add_flow(root, herdr, session, monkeypatch, how):
     answers, calls = session
+    path = precomputed(monkeypatch, ["cached\tnotes"])
     open_workspaces(herdr)
     if how == "env":
         monkeypatch.setenv(picker.ADD_ENV, "1")
+    monkeypatch.setattr(flow, "add", lambda: "Added")
     answers += [None]
     assert picker.run(add=how == "flag") == 0
-    assert calls[0][1] == f"Add: coming in A7\n{picker.HELP}"
+    assert not path.exists()
+    assert calls == [(picker.build()[0], f"Added\n{picker.HELP}")]
 
 
 def test_picker_needs_fzf(root, herdr, tmp_path, monkeypatch, capsys):

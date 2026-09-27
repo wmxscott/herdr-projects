@@ -17,7 +17,7 @@ import tty
 import unicodedata
 from pathlib import Path
 
-from herdr_projects import herdr
+from herdr_projects import flow, herdr
 from herdr_projects.cli import (
     Failure,
     fail,
@@ -50,7 +50,6 @@ GAP = "  "
 KEYS = ("ctrl-r", "ctrl-a", "ctrl-e", "ctrl-d", "ctrl-o")
 HELP = "enter open · ^r rename · ^a add · ^e edit · ^d delete · ^o edit file"
 INVALID_HELP = "^o edit projects.toml · esc close"
-COMING = "{}: coming in A7"
 
 
 def cell_width(text: str) -> int:
@@ -149,8 +148,9 @@ def read_rows() -> list[str] | None:
 def run(add: bool = False) -> int:
     if not shutil.which("fzf"):
         return fail_in_popup("the picker needs fzf on PATH: https://github.com/junegunn/fzf")
-    lines, valid = read_rows(), True
-    notice = COMING.format("Add") if add or os.environ.get(ADD_ENV) else None
+    lines, valid, notice = read_rows(), True, None
+    if add or os.environ.get(ADD_ENV):
+        lines, notice = None, handle("ctrl-a", None)
     while True:
         if lines is None:
             lines, valid = build()
@@ -170,8 +170,7 @@ def run(add: bool = False) -> int:
 def choose(lines: list[str], header: str) -> tuple[str, str | None] | None:
     """Run fzf: None when cancelled, else the key pressed and the selected bare label."""
     args = ["fzf", "--delimiter", "\t", "--with-nth", "1", "--expect", ",".join(KEYS)]
-    args += ["--header", header, "--prompt", "> ", "--layout", "reverse", "--height", "100%"]
-    args += ["--border=none", "--margin=0", "--padding=0", "--no-info"]
+    args += ["--header", header, "--prompt", "> ", *flow.LAYOUT]
     done = subprocess.run(
         args,
         input="".join(f"{line}\n" for line in lines),
@@ -198,11 +197,11 @@ def handle(key: str, label: str | None, valid: bool = True) -> str | None:
             toast(relabel(load_registry()))
             return None
         if key == "ctrl-a":
-            return COMING.format("Add")
+            return flow.add()
         if label is None:
             return ""
         if key == "ctrl-e":
-            return COMING.format("Edit")
+            return flow.edit(label)
         registry = load_registry()
         project = find(registry, label)
         if key == "ctrl-d":

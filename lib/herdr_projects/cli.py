@@ -164,10 +164,10 @@ def cmd_rename(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_add(args: argparse.Namespace) -> int:
-    registry = load_registry()
-    if args.path:
-        path = os.path.abspath(os.path.expanduser(args.path))
+def addable(path: str | None = None) -> str:
+    """The absolute path to add, by default the user's pane's cwd; refuses non-projects."""
+    if path:
+        path = os.path.abspath(os.path.expanduser(path))
     else:
         path = herdr.current_pane().cwd
         if not path:
@@ -176,10 +176,20 @@ def cmd_add(args: argparse.Namespace) -> int:
         raise Failure(f"No such directory: {collapse_home(path)}")
     if is_linked_worktree(path):
         raise Failure(f"Linked worktrees can't be projects: {collapse_home(path)}")
+    return path
+
+
+def registered(registry: Registry, path: str) -> Project | None:
     real = os.path.realpath(path)
-    for existing in registry.projects:
-        if existing.real_path == real:
-            raise Failure(f"Already registered as {registry.label(existing)}")
+    return next((p for p in registry.projects if p.real_path == real), None)
+
+
+def cmd_add(args: argparse.Namespace) -> int:
+    registry = load_registry()
+    path = addable(args.path)
+    existing = registered(registry, path)
+    if existing:
+        raise Failure(f"Already registered as {registry.label(existing)}")
     if args.group and not registry.group(args.group):
         raise Failure(f'No group "{args.group}"')
     project = Project(
