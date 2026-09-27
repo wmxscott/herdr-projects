@@ -6,23 +6,10 @@ A [Herdr](https://herdr.dev) plugin that keeps a list of your projects and opens
 
 You list the projects in a config file, or add them from a popup. One key opens the picker: choose a project and Herdr focuses its workspace, or creates one in the project's directory with the right label. New workspaces in a project's directory get its label on their own, and one more key resets a workspace's label after you've changed it.
 
-<!-- screenshot: picker popup -->
-
-```
->
-
- ↵  open    ^a  add    ^e  edit 
-^r rename · ^d delete · ^o edit file · esc close
-
-     oss                                               1 / 1
-  └   ripgrep  ~/src/oss/ripgrep                            
-     sandbox                                           0 / 0
-     work                                              1 / 3
-  │   api      ~/src/work/api                               
-  │   docs     ~/src/work/docs                              󰌸
-  └   web      ~/src/work/web
-    dotfiles   ~/.dotfiles
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/picker-dark.png">
+  <img alt="The picker: groups of projects, each project with its icon, path and status" src="docs/screenshots/picker-light.png">
+</picture>
 
 ## Requirements
 
@@ -249,6 +236,10 @@ To try a checkout in Herdr, uninstall any installed copy, then `herdr plugin lin
 The tests run against a fake `herdr` on `PATH` that records its arguments and answers with canned JSON, so they never reach a running Herdr. The fzf prompts themselves are checked by hand.
 
 `bin/herdr-projects` is a small `sh` script that finds Python 3.11 or newer and runs `lib/herdr_projects`, which has no dependencies beyond the standard library. The `open` and `add` actions read the list and ask Herdr which projects are open before they open the popup, so the popup only has to start fzf.
+
+### Regenerating the screenshots
+
+The screenshots show a made-up list. `scripts/demo --vhs` renders it with [VHS](https://github.com/charmbracelet/vhs) from `docs/screenshots/picker.tape`, once per theme, in an empty environment with a temporary `HOME` and a `herdr` that always fails. It needs `brew install vhs`, fzf and FiraCode Nerd Font. `scripts/demo` on its own opens the same picker in your terminal.
 
 ### Glyphs
 
