@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pytest
 from conftest import (
+    bare_layout,
     changes,
+    git,
     in_context,
     one_workspace,
     open_workspaces,
@@ -437,3 +439,71 @@ def test_event_outside_herdr_logs_to_herdrs_default_state_dir(
     herdr.respond("workspace get w5", herdr.error("workspace w5 not found"))
     assert created() == 0
     assert (tmp_path / "xdg/herdr/plugins/herdr-projects/hook.log").exists()
+
+
+# worktrees
+
+
+@pytest.fixture
+def api_worktree(root) -> Path:
+    """work/api as a git repo, with a linked worktree where wkt puts one."""
+    git("init", "-q", str(root / "api"))
+    git("-C", str(root / "api"), "commit", "-q", "--allow-empty", "-m", "init")
+    checkout = root / ".herdr/worktrees/api/feature"
+    git("-C", str(root / "api"), "worktree", "add", "-q", "-b", "feature", str(checkout))
+    return checkout
+
+
+def wkt(workspace_id: str, checkout: Path, focused: bool = False) -> dict:
+    """A workspace as `wkt` creates it: herdr's record of a linked worktree of work/api."""
+    main = Path(os.environ["HOME"]) / "api"
+    return ws(workspace_id, "feature", focused, True, checkout_path=checkout, repo_root=main)
+
+
+def statuses(capsys) -> dict[str, str]:
+    assert cli.main(["list"]) == 0
+    return dict(line.split("\t")[::2] for line in capsys.readouterr().out.splitlines())
+
+
+def test_a_focused_worktree_workspace_makes_its_project_active(root, herdr, api_worktree, capsys):
+    open_workspaces(
+        herdr, (ws("w1"), root / "api"), (wkt("w2", api_worktree, focused=True), api_worktree)
+    )
+    assert statuses(capsys)["work/api"] == "active"
+    assert cli.main(["open", "work/api"]) == 0
+    assert changes(herdr) == [["workspace", "focus", "w1"]]
+
+
+def test_a_worktree_workspace_alone_is_open_and_open_creates_the_main_one(
+    root, herdr, api_worktree, capsys
+):
+    open_workspaces(herdr, (wkt("w2", api_worktree), api_worktree / "src"))
+    assert statuses(capsys)["work/api"] == "open"
+    assert cli.main(["open", "work/api"]) == 0
+    real = str((root / "api").resolve())
+    assert changes(herdr) == [
+        ["workspace", "create", "--cwd", real, "--label", "W work/api", "--focus"]
+    ]
+
+
+def test_rename_and_the_hook_skip_a_worktree_workspace(root, herdr, api_worktree, created):
+    one_workspace(herdr, wkt("w5", api_worktree), api_worktree)
+    assert cli.main(["rename", "--workspace", "w5"]) == 1
+    assert created() == 0
+    assert changes(herdr) == []
+
+
+def test_a_bare_layout_container_is_its_project_from_inside_a_worktree(root, herdr, capsys):
+    edge = bare_layout(root / "edge")
+    registry = load(registry_path())
+    project = Project(name="edge", icon="E", path=str(edge))
+    save(Registry(registry.groups, (*registry.projects, project)), registry_path())
+    open_workspaces(herdr, (ws("w1", "old", focused=True), edge / "main"))
+    assert statuses(capsys)["edge"] == "active"
+    assert cli.main(["open", "edge"]) == 0
+    one_workspace(herdr, ws("w1", "old"), edge / "main")
+    assert cli.main(["rename", "--workspace", "w1"]) == 0
+    assert changes(herdr) == [
+        ["workspace", "focus", "w1"],
+        ["workspace", "rename", "w1", "E edge"],
+    ]

@@ -552,3 +552,4 @@ own diff.
 - 2026-09-27 — phase B2 landed as #11
 - 2026-09-27 — phase B3 landed as #12
 - 2026-09-27 — phase B4 landed as #13; user feedback added as B5/B6 (S17–S19)
+- 2026-09-27 — phase B5 landed as #14

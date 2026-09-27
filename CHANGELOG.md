@@ -18,6 +18,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - The `rename` action, which labels the current workspace after its project.
 - The `add` action, which opens the picker in the add flow for the focused pane's directory.
 - Automatic labelling of new workspaces in a project's directory, once, on `workspace.created`. Linked git worktrees are never matched.
+- Worktree-aware status: a linked worktree's workspace, like one herdr-wkt creates, makes its repository's project open, or active while focused. `enter` still opens the project's own workspace.
 - A command line: `list`, `open`, `rename` and `add`.
 - `scripts/gen-glyphs.py`, which generates the icon picker's glyph list from Nerd Fonts' `glyphnames.json` (committed for Nerd Fonts 3.5.1).
 - An example `projects.toml`, checked in CI.

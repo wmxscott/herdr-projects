@@ -30,7 +30,7 @@ from herdr_projects.cli import (
     find_group,
     load_registry,
     open_project,
-    open_projects,
+    presence,
     relabel,
     state_dir,
     status,
@@ -282,7 +282,7 @@ def header(pal: Palette, valid: bool, notice: str = "") -> str:
 def statuses(registry: Registry) -> dict[str, str]:
     """Bare label → status, for projects that have one; none from herdr if it can't say."""
     try:
-        found = open_projects(registry)
+        found = presence(registry)
     except HerdrError:
         found = {}
     return {p.bare_label: s for p in registry.projects if (s := status(p, found))}

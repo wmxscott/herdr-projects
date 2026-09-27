@@ -1,23 +1,18 @@
 from __future__ import annotations
 
 import os
-import subprocess
 from pathlib import Path
 
 import pytest
+from conftest import bare_layout, git
 from herdr_projects.herdr import Workspace
 from herdr_projects.registry import Project, Registry
-from herdr_projects.resolve import is_linked_worktree, open_instances, project_for
-
-
-def git(*args: str) -> None:
-    identity = ["-c", "user.name=Test", "-c", "user.email=test@example.com"]
-    subprocess.run(
-        ["git", *identity, "-c", "commit.gpgsign=false", *args],
-        check=True,
-        capture_output=True,
-        stdin=subprocess.DEVNULL,
-    )
+from herdr_projects.resolve import (
+    is_linked_worktree,
+    open_instances,
+    present_projects,
+    project_for,
+)
 
 
 @pytest.fixture
@@ -130,13 +125,21 @@ def test_herdrs_worktree_hint_is_preferred(root, repo):
     assert project_for(registry, str(repo), linked_worktree=True) is None
 
 
-def ws(workspace_id: str, focused: bool = False, linked: bool | None = None) -> Workspace:
+def ws(
+    workspace_id: str,
+    focused: bool = False,
+    linked: bool | None = None,
+    checkout: Path | None = None,
+    repo_root: Path | None = None,
+) -> Workspace:
     return Workspace(
         id=workspace_id,
         label="",
         focused=focused,
         active_tab_id=f"{workspace_id}:t1",
         linked_worktree=linked,
+        checkout_path=checkout and str(checkout),
+        repo_root=repo_root and str(repo_root),
     )
 
 
@@ -158,7 +161,75 @@ def test_open_instances(root):
 
 def test_open_instances_skip_linked_worktrees(root, repo):
     registry = make(("repo", repo))
-    workspaces = [ws("w1", linked=True), ws("w2"), ws("w3", linked=False)]
-    locations = {"w1": str(repo), "w2": str(repo / "wt"), "w3": str(repo)}
+    workspaces = [ws("w1", linked=True), ws("w2", linked=False)]
+    locations = {"w1": str(repo), "w2": str(repo)}
     found = open_instances(registry, workspaces, lambda w: locations[w.id])
-    assert found == {registry.projects[0]: workspaces[2]}
+    assert found == {registry.projects[0]: workspaces[1]}
+
+
+def test_a_workspace_without_a_worktree_record_resolves_by_path(root):
+    edge = bare_layout(root / "edge")
+    registry = make(("edge", edge))
+    workspaces = [ws("w1")]
+    found = open_instances(registry, workspaces, lambda w: str(edge / "main"))
+    assert found == {registry.projects[0]: workspaces[0]}
+    assert present_projects(registry, workspaces, lambda w: str(edge / "main")) == {
+        registry.projects[0]: False
+    }
+
+
+def test_worktree_workspaces_are_present_not_open(root, repo):
+    registry = make(("repo", repo))
+    worktree = ws("w1", focused=True, linked=True, checkout=repo / "wt", repo_root=repo)
+    locations = {"w1": str(repo / "wt"), "w2": str(repo)}
+    assert open_instances(registry, [worktree], lambda w: locations[w.id]) == {}
+    assert present_projects(registry, [worktree], lambda w: locations[w.id]) == {
+        registry.projects[0]: True
+    }
+    main = ws("w2")
+    assert present_projects(registry, [main, worktree], lambda w: locations[w.id]) == {
+        registry.projects[0]: True
+    }
+    unfocused = ws("w1", linked=True, checkout=repo / "wt", repo_root=repo)
+    assert present_projects(registry, [unfocused], lambda w: locations[w.id]) == {
+        registry.projects[0]: False
+    }
+
+
+def test_only_the_open_instance_makes_a_project_active(root, repo):
+    registry = make(("repo", repo))
+    workspaces = [ws("w1"), ws("w2", focused=True)]
+    assert present_projects(registry, workspaces, lambda w: str(repo)) == {
+        registry.projects[0]: False
+    }
+
+
+def test_a_worktree_maps_by_repo_root_ancestry_not_its_location(root, repo):
+    registry = make(("src", repo / "src"), ("root", root))
+    worktree = ws("w1", linked=True, checkout=root / "repo-wt", repo_root=repo)
+    found = present_projects(registry, [worktree], lambda w: str(repo / "src"))
+    assert {p.name: f for p, f in found.items()} == {"root": False}
+
+
+@pytest.mark.parametrize("reported", [".bare", ""])
+def test_a_bare_repos_worktree_maps_to_its_container(root, reported):
+    edge = bare_layout(root / "edge")
+    registry = make(("edge", edge))
+    worktree = ws("w1", linked=True, checkout=edge / "main", repo_root=edge / reported)
+    assert present_projects(registry, [worktree], lambda w: None) == {registry.projects[0]: False}
+
+
+def test_without_repo_root_git_finds_the_main_checkout(root, repo):
+    edge = bare_layout(root / "edge")
+    registry = make(("repo", repo), ("edge", edge))
+    locations = {"w1": str(root / "repo-wt"), "w2": str(edge / "main"), "w3": None}
+    workspaces = [
+        ws("w1", focused=True, linked=True),
+        ws("w2", linked=True),
+        ws("w3", linked=True),
+    ]
+    found = present_projects(registry, workspaces, lambda w: locations[w.id])
+    assert {p.name: f for p, f in found.items()} == {"repo": True, "edge": False}
+    checkout = ws("w1", linked=True, checkout=repo / "wt")
+    found = present_projects(registry, [checkout], lambda w: None)
+    assert {p.name: f for p, f in found.items()} == {"repo": False}

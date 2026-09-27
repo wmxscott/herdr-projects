@@ -118,9 +118,9 @@ Adding, editing and deleting from the picker rewrite the whole file: groups, the
 
 A directory belongs to the project whose `path` is that directory or contains it, the deepest one when several do. Symlinks are resolved first. Subfolders get their project's label unchanged.
 
-A linked git worktree never belongs to a project, even inside one. [herdr-wkt](https://github.com/wmxscott/herdr-wkt) owns worktrees and their labels.
+A linked git worktree never belongs to a project, even inside one: it isn't labelled, and `enter` opens the project's own workspace, not a worktree's. [herdr-wkt](https://github.com/wmxscott/herdr-wkt) owns worktrees and their labels.
 
-A workspace's directory is the working directory of the focused pane in its active tab. So a project counts as open when some workspace sits in it, whatever that workspace is called.
+A workspace's directory is the working directory of the focused pane in its active tab. So a project counts as open when some workspace sits in it, whatever that workspace is called. A workspace Herdr reports as a linked worktree counts too, for the project whose path is or contains its repository's main checkout (or, for a `.bare` layout, the directory holding the bare repository): it makes that project open, and active while it's focused. A workspace Herdr reports no worktree for, like a `.bare` layout's container, goes by its directory alone, even when its pane is inside one of the container's worktrees.
 
 ## Keybindings
 
@@ -172,8 +172,8 @@ Type to search. The search matches projects' labels, `group/name`, and nothing e
 
 | Status | |
 |---|---|
-| `` | Open, in the workspace you're in |
-| `` | Open in another workspace |
+| `` | Open, in the workspace you're in (its own or a worktree's) |
+| `` | Open in another workspace (its own or a worktree's) |
 | `󰌸` | The path doesn't exist, so `enter` can't open it |
 
 | Key | |
