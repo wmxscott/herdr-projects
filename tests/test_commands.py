@@ -6,101 +6,22 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from conftest import (
+    changes,
+    in_context,
+    one_workspace,
+    open_workspaces,
+    registry_for,
+    registry_path,
+    toasts,
+    ws,
+)
 from herdr_projects import cli
-from herdr_projects.registry import Group, Project, Registry, load, save
-
-
-@pytest.fixture
-def root(env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Project dirs under $HOME, and a registry at $HERDR_PLUGIN_CONFIG_DIR naming them."""
-    home = Path(env["HOME"])
-    monkeypatch.setenv("HERDR_PLUGIN_CONFIG_DIR", str(home / ".config/projects"))
-    for name in ("api/src", "web", "home-web", "notes", "unregistered/deep"):
-        (home / name).mkdir(parents=True)
-    save(registry_for(home), registry_path())
-    return home
-
-
-def registry_for(home: Path) -> Registry:
-    return Registry(
-        (Group(name="work", icon="W"), Group(name="home", icon="H")),
-        (
-            Project(name="api", group="work", path=str(home / "api")),
-            Project(name="web", group="work", path=str(home / "web")),
-            Project(name="web", group="home", path=str(home / "home-web")),
-            Project(name="notes", icon="N", path=str(home / "notes")),
-            Project(name="gone", icon="G", path=str(home / "gone")),
-        ),
-    )
-
-
-def registry_path() -> Path:
-    return Path(os.environ["HERDR_PLUGIN_CONFIG_DIR"]) / "projects.toml"
-
-
-def ws(workspace_id: str, label: str = "", focused: bool = False, linked: bool | None = None):
-    record = {
-        "workspace_id": workspace_id,
-        "label": label,
-        "focused": focused,
-        "active_tab_id": f"{workspace_id}:t1",
-    }
-    if linked is not None:
-        record["worktree"] = {"is_linked_worktree": linked}
-    return record
-
-
-def pn(workspace_id: str, cwd: Path | str | None) -> dict:
-    return {
-        "pane_id": f"{workspace_id}:p1",
-        "tab_id": f"{workspace_id}:t1",
-        "workspace_id": workspace_id,
-        "cwd": None if cwd is None else str(cwd),
-    }
-
-
-@pytest.fixture
-def herdr(fake_herdr):
-    """The fake, answering toasts and the commands that change herdr."""
-    for command in ("notification show", "workspace focus", "workspace rename"):
-        fake_herdr.respond(command, fake_herdr.ok())
-    fake_herdr.respond("workspace create", fake_herdr.ok({"workspace": ws("wNew", focused=True)}))
-    return fake_herdr
-
-
-def open_workspaces(fake, *entries: tuple[dict, Path | str | None]) -> None:
-    fake.respond("workspace list", fake.ok({"workspaces": [w for w, _ in entries]}))
-    fake.respond(
-        "pane list", fake.ok({"panes": [pn(w["workspace_id"], cwd) for w, cwd in entries]})
-    )
-
-
-def one_workspace(fake, record: dict, cwd: Path | str | None) -> None:
-    """`workspace get` and its pane, found through the plugin context or `--workspace`."""
-    workspace_id = record["workspace_id"]
-    fake.respond(f"workspace get {workspace_id}", fake.ok({"workspace": record}))
-    fake.respond(
-        f"pane list --workspace {workspace_id}", fake.ok({"panes": [pn(workspace_id, cwd)]})
-    )
-    fake.respond(f"pane get {workspace_id}:p1", fake.ok({"pane": pn(workspace_id, cwd)}))
-    fake.respond("pane current", fake.ok({"pane": pn(workspace_id, cwd)}))
-
-
-def in_context(monkeypatch, pane_id: str) -> None:
-    monkeypatch.setenv("HERDR_PLUGIN_CONTEXT_JSON", json.dumps({"focused_pane_id": pane_id}))
+from herdr_projects.registry import Project, Registry, load, save
 
 
 def outside_herdr(monkeypatch) -> None:
     monkeypatch.delenv("HERDR_PLUGIN_ROOT")
-
-
-def toasts(fake) -> list[str]:
-    return [call[4] for call in fake.calls() if call[:2] == ["notification", "show"]]
-
-
-def changes(fake) -> list[list[str]]:
-    kinds = (["workspace", "focus"], ["workspace", "create"], ["workspace", "rename"])
-    return [call for call in fake.calls() if call[:2] in kinds]
 
 
 # list
