@@ -208,11 +208,15 @@ New group via `--group` must already exist in the CLI; the picker creates groups
 
 ### Event hook
 
-Read workspace id from `HERDR_PLUGIN_EVENT_JSON` (S9). If
-`$HERDR_PLUGIN_STATE_DIR/seen.json` has it, exit. Record it, then run Rename for that
-workspace. Always exit 0; append errors to `$HERDR_PLUGIN_STATE_DIR/hook.log`. If A1's
-check shows UI-created workspaces skip `workspace.created`, also subscribe to
-`workspace.focused`; the `seen.json` check keeps that path to one file read.
+Read workspace id from `HERDR_PLUGIN_EVENT_JSON` (S9), then run Rename for that workspace,
+silently (no toast; no match is a no-op). Always exit 0; append errors to
+`$HERDR_PLUGIN_STATE_DIR/hook.log`. Subscribes to `workspace.created` only (S10).
+
+*Amended in A4: no `seen.json`.* It existed only to keep a `workspace.focused` path cheap,
+which S10's resolution removed. It would also be wrong: herdr reuses workspace ids after a
+session restore (`herdr-server.log`: `wE` created 2026-07-23 and again 2026-08-15, right
+after a restore; likewise `wJ`, `wK`, `wN`, `wS`, `w11`–`w16`), so an id-keyed dedupe
+would skip new workspaces. Restores emit no `workspace.created`, so S8 holds without it.
 
 ## Picker contract
 
@@ -339,8 +343,8 @@ toasts and exit codes. Resolve S10 per A1's finding (add the `workspace.focused`
 subscription and test only if needed). The `rename` action becomes usable from a
 keybinding here.
 *Shippable when:* CLI tests against fake herdr cover each command's success and failure
-paths, the "already open" focus path, event dedupe via `seen.json`, and that `event`
-exits 0 on errors. By hand: bound `rename` action relabels a real workspace.
+paths, the "already open" focus path, and that `event`
+exits 0 on errors (amended: no `seen.json`, see Event hook). By hand: bound `rename` action relabels a real workspace.
 *Split seam:* `event` (+ `seen.json`) after the four interactive commands.
 
 **A5 — Glyph data**
