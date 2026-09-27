@@ -28,6 +28,7 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
         "HERDR_PLUGIN_ID": "herdr-projects",
         "HERDR_PLUGIN_ROOT": str(ROOT),
         "HERDR_PLUGIN_STATE_DIR": str(state_dir),
+        "HERDR_PROJECTS_THEME": "light",
     }
     for name, value in values.items():
         if name != "PATH":
