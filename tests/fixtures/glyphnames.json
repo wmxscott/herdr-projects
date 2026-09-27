@@ -1,0 +1,13 @@
+{
+  "oct-zap": {"char": "", "code": "f0e7"},
+  "cod-account": {"char": "", "code": "eb99"},
+  "METADATA": {
+    "website": "https://www.nerdfonts.com",
+    "development-website": "https://github.com/ryanoasis/nerd-fonts",
+    "version": "9.8.7",
+    "date": "2026-01-02 03:04:05+00:00"
+  },
+  "md-zodiac_leo": {"char": "󰟘", "code": "f07d8"},
+  "cod-add_small": {"char": "", "code": "ec7b"},
+  "cod-add": {"char": "", "code": "ea60"}
+}
