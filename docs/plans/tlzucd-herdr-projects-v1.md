@@ -88,6 +88,11 @@ focus/cwd change, so manual relabels are never overwritten. Rejected: continuous
 **S10 — `workspace.created` may not fire for UI-created workspaces.** Reported by
 herdr-plugin-workspace-manager's manifest comments; unverified on 0.9.1. Verified in A1
 (see A1), resolved in A4.
+*Resolved in A1 (2026-09-26): it does fire.* `herdr workspace create` was observed in
+`hook.log`, and in herdr v0.9.1's source the UI `new_workspace` (and new-worktree) path
+sends the same `WorkspaceCreate` request, reaching the same `emit_workspace_open_events`
+(`src/app/creation.rs`). The root pane and its cwd exist when the event fires. Only
+herdr's startup/default workspaces skip it. So A4 subscribes to `workspace.created` only.
 
 **S11 — The launch shim runs `python -I -S`.** `-I` drops the script dir from `sys.path`,
 so the entry must insert `lib/` itself. Shim is copied from herdr-launchpad
@@ -412,3 +417,5 @@ own diff.
 - **Fixing moved projects by remote** — rejected; missing-path status plus `ctrl-e` covers it.
 
 ## Log
+
+- 2026-09-26 — phase A1 landed as #2; S10 resolved (UI-created workspaces emit `workspace.created`)
