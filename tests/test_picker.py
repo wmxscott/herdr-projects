@@ -14,6 +14,7 @@ from conftest import (
     registry_path,
     run_plugin,
     toasts,
+    with_empty_group,
     ws,
 )
 from herdr_projects import cli, flow, picker, theme
@@ -474,14 +475,55 @@ def test_keys_that_need_a_selection_do_nothing_without_one(root, herdr, key):
     assert herdr.calls() == []
 
 
-@pytest.mark.parametrize("key", ["", "ctrl-d", "ctrl-e"])
-def test_project_keys_on_a_group_header_do_nothing(root, herdr, monkeypatch, key):
-    monkeypatch.setattr(picker, "read_key", lambda: "y")
-    monkeypatch.setattr(flow, "edit", lambda label, pal: pytest.fail("edited"))
+def test_open_on_a_group_header_does_nothing(root, herdr):
     before = registry_path().read_text()
-    assert picker.handle(key, "g:work") == "Select a project"
+    assert picker.handle("", "g:work") == "Select a project"
     assert registry_path().read_text() == before
     assert herdr.calls() == []
+
+
+def test_ctrl_e_on_a_group_header_edits_the_group(root, herdr, monkeypatch):
+    monkeypatch.setattr(flow, "edit", lambda label, pal: pytest.fail("edited a project"))
+    monkeypatch.setattr(flow, "edit_group", lambda name, pal: f"Updated {name} in {pal['base']}")
+    notice = picker.handle("ctrl-e", "g:work", pal=MACCHIATO)
+    assert notice == f"Updated work in {MACCHIATO['base']}"
+
+
+@pytest.mark.parametrize("answer", ["y", "Y"])
+def test_ctrl_d_deletes_an_empty_group_after_a_yes(root, herdr, monkeypatch, capsys, answer):
+    with_empty_group(root)
+    monkeypatch.setattr(picker, "read_key", lambda: answer)
+    notice = picker.handle("ctrl-d", "g:empty")
+    assert notice == "Deleted group empty"
+    assert not isinstance(notice, picker.Problem)
+    assert capsys.readouterr().out.startswith("Delete group empty? [y/N] ")
+    assert load(registry_path()) == registry_for(root)
+
+
+@pytest.mark.parametrize("answer", ["n", "\r", "\x1b"])
+def test_ctrl_d_keeps_an_empty_group_otherwise(root, herdr, monkeypatch, answer):
+    with_empty_group(root)
+    before = registry_path().read_text()
+    monkeypatch.setattr(picker, "read_key", lambda: answer)
+    assert picker.handle("ctrl-d", "g:empty") == ""
+    assert registry_path().read_text() == before
+
+
+@pytest.mark.parametrize(("group", "count"), [("work", "2 projects"), ("home", "1 project")])
+def test_ctrl_d_on_a_group_with_projects_says_so(root, herdr, monkeypatch, group, count):
+    monkeypatch.setattr(picker, "read_key", lambda: pytest.fail("asked"))
+    before = registry_path().read_text()
+    notice = picker.handle("ctrl-d", f"g:{group}")
+    assert notice == f"{group} has {count}; move or delete them first"
+    assert isinstance(notice, picker.Problem)
+    assert registry_path().read_text() == before
+
+
+def test_ctrl_d_on_a_group_that_is_gone(root, herdr, monkeypatch):
+    monkeypatch.setattr(picker, "read_key", lambda: pytest.fail("asked"))
+    notice = picker.handle("ctrl-d", "g:nope")
+    assert notice == 'No group "nope"'
+    assert isinstance(notice, picker.Problem)
 
 
 def test_keys_that_need_no_project_work_on_a_group_header(root, herdr, monkeypatch, editor):
@@ -704,13 +746,14 @@ def test_run_folds_a_group_on_enter_and_stays_on_its_header(
     assert herdr.calls() == []
 
 
-def test_run_keeps_groups_folded_across_other_keys(root, herdr, session, positions):
+def test_run_keeps_groups_folded_across_other_keys(root, herdr, session, positions, monkeypatch):
     answers, calls = session
     open_workspaces(herdr)
+    monkeypatch.setattr(flow, "edit_group", lambda name, pal: "Updated")
     answers += [("", "g:home"), ("ctrl-e", "g:home"), None]
     assert picker.run() == 0
     assert ids(calls[2][0])[:3] == ["g:home", "g:work", "p:work/api"]
-    assert calls[2][1] == picker.header(LATTE, True, "Select a project")
+    assert calls[2][1] == picker.header(LATTE, True, "Updated")
     assert positions == [0, 1, 0]
 
 

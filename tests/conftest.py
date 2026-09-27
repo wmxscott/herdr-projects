@@ -124,6 +124,13 @@ def registry_for(home: Path) -> Registry:
     )
 
 
+def with_empty_group(home: Path, icon: str | None = "E") -> None:
+    """The root registry, plus a group `empty`."""
+    registry = registry_for(home)
+    groups = (*registry.groups, Group(name="empty", icon=icon))
+    save(Registry(groups, registry.projects), registry_path())
+
+
 def registry_path() -> Path:
     return Path(os.environ["HERDR_PLUGIN_CONFIG_DIR"]) / "projects.toml"
 

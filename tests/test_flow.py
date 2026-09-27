@@ -3,7 +3,14 @@ from __future__ import annotations
 import os
 
 import pytest
-from conftest import in_context, one_workspace, registry_for, registry_path, ws
+from conftest import (
+    in_context,
+    one_workspace,
+    registry_for,
+    registry_path,
+    with_empty_group,
+    ws,
+)
 from herdr_projects import cli, flow, picker, theme
 from herdr_projects.flow import Cancelled
 from herdr_projects.registry import Group, Project, Registry, load
@@ -321,3 +328,117 @@ def test_fzf_failing_is_a_failure(fzf_bin, monkeypatch):
     monkeypatch.setenv("FZF_EXIT", "2")
     with pytest.raises(cli.Failure, match="fzf exited with status 2"):
         flow.ask("head", "Name: ")
+
+
+# group editing
+
+
+def test_icon_rows_offer_keep_current_before_no_icon():
+    rows = flow.icon_rows(icons(), skip=True, keep="W")
+    assert rows[:2] == ["W\tkeep current", " \tno icon\t"]
+    assert flow.icon_value(rows[0]) == "W"
+    assert rows[2:] == flow.icon_rows(icons())
+
+
+def test_regrouped_renames_the_group_and_its_members():
+    result = flow.regrouped(icons(), icons().group("work"), Group(name="job", icon="J"))
+    assert result.groups == (Group(name="bare"), Group(name="home", icon="H"), result.group("job"))
+    assert result.group("job") == Group(name="job", icon="J")
+    labels = [p.bare_label for p in result.projects]
+    assert labels == ["notes", "z", "bare/x", "job/api", "job/web"]
+
+
+def test_edit_group_renames_it_and_its_projects(root, herdr, script):
+    answers, calls = script
+    answers += ["job", row("keep current")]
+    assert flow.edit_group("work") == "Updated W job"
+    registry = load(registry_path())
+    assert registry.group("work") is None
+    assert registry.group("job") == Group(name="job", icon="W")
+    labels = [p.bare_label for p in registry.projects]
+    assert labels == ["gone", "notes", "home/web", "job/api", "job/web"]
+    assert [c["prompt"] for c in calls] == ["Name: ", "Icon: "]
+    assert calls[0]["args"][-2:] == ("--query", "work")
+    assert calls[0]["header"] == theme.header(
+        theme.LATTE, [theme.pill("Edit group", "work", theme.LATTE)], flow.HINTS
+    )
+
+
+def test_edit_group_starts_on_keep_current(root, herdr, script):
+    answers, calls = script
+    answers += ["", row("keep current")]
+    flow.edit_group("work")
+    assert calls[1]["text"].startswith("W\tkeep current\n \tno icon\t\n")
+    assert not [arg for arg in calls[1]["args"] if arg.startswith("load:pos")]
+
+
+def test_edit_group_without_an_icon_has_nothing_to_keep(root, herdr, script):
+    with_empty_group(root, icon=None)
+    answers, calls = script
+    answers += ["", row("no icon")]
+    assert flow.edit_group("empty") == ""
+    assert calls[1]["text"].startswith(" \tno icon\t\n")
+    assert "keep current" not in calls[1]["text"]
+
+
+def test_edit_group_that_changes_nothing_leaves_the_file_alone(root, herdr, script):
+    registry_path().write_text(registry_path().read_text() + "# a comment\n")
+    before = registry_path().read_text()
+    answers, _ = script
+    answers += ["  ", row("keep current")]
+    assert flow.edit_group("work") == ""
+    assert registry_path().read_text() == before
+
+
+def test_edit_group_to_no_icon(root, herdr, script):
+    with_empty_group(root)
+    answers, _ = script
+    answers += ["", row("no icon")]
+    assert flow.edit_group("empty") == "Updated empty"
+    assert load(registry_path()).group("empty") == Group(name="empty")
+
+
+def test_edit_group_to_a_new_icon(root, herdr, script):
+    answers, _ = script
+    answers += ["", row("\toct-zap")]
+    assert flow.edit_group("work") == "Updated ⚡ work"
+    registry = load(registry_path())
+    assert registry.group("work") == Group(name="work", icon="⚡")
+    assert registry.label(registry.projects[-1]) == "⚡ work/web"
+
+
+@pytest.mark.parametrize("step", range(2))
+def test_esc_while_editing_a_group_discards_everything(root, herdr, script, step):
+    answers, calls = script
+    answers += ["job", row("\toct-zap")]
+    answers.insert(step, Cancelled)
+    before = registry_path().read_text()
+    assert flow.edit_group("work") == ""
+    assert registry_path().read_text() == before
+    assert len(calls) == step + 1
+
+
+def test_renaming_a_group_to_another_groups_name_is_refused(root, herdr, script):
+    answers, _ = script
+    answers += ["home", row("keep current")]
+    before = registry_path().read_text()
+    notice = picker.handle("ctrl-e", "g:work")
+    assert isinstance(notice, picker.Problem)
+    assert 'duplicate name "home"' in notice
+    assert registry_path().read_text() == before
+
+
+def test_removing_the_icon_its_projects_rely_on_is_refused(root, herdr, script):
+    answers, _ = script
+    answers += ["", row("no icon")]
+    before = registry_path().read_text()
+    notice = picker.handle("ctrl-e", "g:work")
+    assert isinstance(notice, picker.Problem)
+    assert "no icon" in notice
+    assert registry_path().read_text() == before
+
+
+def test_edit_group_that_is_gone(root, herdr, script):
+    with pytest.raises(cli.Failure, match='No group "nope"'):
+        flow.edit_group("nope")
+    assert script[1] == []
