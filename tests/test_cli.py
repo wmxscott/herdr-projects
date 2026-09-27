@@ -23,12 +23,6 @@ def test_help_names_every_command(env, capsys):
         assert command in out
 
 
-@pytest.mark.parametrize("argv", [["picker"], ["picker", "--add"], ["popup"], ["popup", "--add"]])
-def test_unimplemented_commands_exit_2(env, capsys, argv):
-    assert cli.main(argv) == 2
-    assert capsys.readouterr().err == f"herdr-projects: {argv[0]}: not implemented\n"
-
-
 @pytest.mark.parametrize(
     "argv", [[], ["bogus"], ["open"], ["open", "a", "b"], ["list", "--bogus"], ["event", "x"]]
 )

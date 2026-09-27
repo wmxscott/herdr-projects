@@ -90,6 +90,34 @@ def find(registry: Registry, target: str) -> Project:
     return named[0]
 
 
+def status(project: Project, found: dict[Project, Workspace]) -> str | None:
+    if not os.path.isdir(project.path):
+        return "missing"
+    if project in found:
+        return "active" if found[project].focused else "open"
+    return None
+
+
+def open_project(registry: Registry, project: Project) -> None:
+    workspace = open_projects(registry).get(project)
+    if workspace:
+        herdr.focus(workspace.id)
+    elif not os.path.isdir(project.path):
+        raise Failure(f"No such directory: {collapse_home(project.path)}")
+    else:
+        herdr.create(project.real_path, registry.label(project))
+
+
+def store(registry: Registry) -> None:
+    target = default_path()
+    try:
+        save(registry, target)
+    except RegistryError as err:
+        raise Failure(*err.messages) from None
+    except OSError as err:
+        raise Failure(f"can't write {collapse_home(str(target))}: {err.strerror}") from None
+
+
 def relabel(registry: Registry, workspace_id: str | None = None) -> str:
     """Label a workspace after its project, by default the user's; returns what happened."""
     if workspace_id:
@@ -119,26 +147,15 @@ def cmd_list(args: argparse.Namespace) -> int:
         print(f"herdr-projects: no open/active status: {err}", file=sys.stderr)
         found = {}
     for project in registry.projects:
-        if not os.path.isdir(project.path):
-            status = "missing"
-        elif project in found:
-            status = "active" if found[project].focused else "open"
-        else:
-            status = "-"
-        print(f"{project.bare_label}\t{collapse_home(project.path)}\t{status}")
+        print(
+            f"{project.bare_label}\t{collapse_home(project.path)}\t{status(project, found) or '-'}"
+        )
     return 0
 
 
 def cmd_open(args: argparse.Namespace) -> int:
     registry = load_registry()
-    project = find(registry, args.project)
-    workspace = open_projects(registry).get(project)
-    if workspace:
-        herdr.focus(workspace.id)
-    elif not os.path.isdir(project.path):
-        raise Failure(f"No such directory: {collapse_home(project.path)}")
-    else:
-        herdr.create(project.real_path, registry.label(project))
+    open_project(registry, find(registry, args.project))
     return 0
 
 
@@ -175,13 +192,7 @@ def cmd_add(args: argparse.Namespace) -> int:
         raise Failure("No icon: pass --icon, or a --group that has one")
     if any(p.bare_label == project.bare_label for p in registry.projects):
         raise Failure(f"{project.bare_label} already exists")
-    target = default_path()
-    try:
-        save(Registry(registry.groups, (*registry.projects, project)), target)
-    except RegistryError as err:
-        raise Failure(*err.messages) from None
-    except OSError as err:
-        raise Failure(f"can't write {collapse_home(str(target))}: {err.strerror}") from None
+    store(Registry(registry.groups, (*registry.projects, project)))
     say(f"Added {registry.label(project)}")
     return 0
 
@@ -208,9 +219,17 @@ def cmd_event(args: argparse.Namespace) -> int:
     return 0
 
 
-def not_implemented(args: argparse.Namespace) -> int:
-    print(f"herdr-projects: {args.command}: not implemented", file=sys.stderr)
-    return 2
+# picker imports this module, so it is imported only when needed.
+def cmd_picker(args: argparse.Namespace) -> int:
+    from herdr_projects import picker
+
+    return picker.run(args.add)
+
+
+def cmd_popup(args: argparse.Namespace) -> int:
+    from herdr_projects import picker
+
+    return picker.popup(args.add)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -250,6 +269,8 @@ HANDLERS = {
     "open": cmd_open,
     "rename": cmd_rename,
     "add": cmd_add,
+    "picker": cmd_picker,
+    "popup": cmd_popup,
     "event": cmd_event,
 }
 
@@ -260,7 +281,7 @@ def main(argv: list[str] | None = None) -> int:
     except SystemExit as exit_:
         return 0 if exit_.code is None else int(exit_.code)
     try:
-        return HANDLERS.get(args.command, not_implemented)(args)
+        return HANDLERS[args.command](args)
     except HerdrError as err:
         return fail(str(err))
     except Failure as err:
