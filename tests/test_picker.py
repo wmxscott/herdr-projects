@@ -142,6 +142,17 @@ def test_only_a_projects_label_is_searched(root):
     assert shown(found[1]) == line("W \twork/api\t ~/api", "", 40)
 
 
+@pytest.fixture
+def real_fzf(monkeypatch):
+    """fzf itself, without the user's options; CI must have it."""
+    if not shutil.which("fzf"):
+        if os.environ.get("CI"):
+            pytest.fail("fzf is not on PATH")
+        pytest.skip("needs fzf")
+    monkeypatch.delenv("FZF_DEFAULT_OPTS", raising=False)
+    monkeypatch.delenv("FZF_DEFAULT_OPTS_FILE", raising=False)
+
+
 def fzf_filter(rows: list[str], query: str) -> list[str]:
     done = subprocess.run(
         ["fzf", "--ansi", "--filter", query, *picker.SEARCH],
@@ -150,10 +161,11 @@ def fzf_filter(rows: list[str], query: str) -> list[str]:
         text=True,
         check=False,
     )
+    # 1 is no match.
+    assert done.returncode in (0, 1), done.stderr
     return ids(done.stdout.splitlines())
 
 
-@pytest.mark.skipif(not shutil.which("fzf"), reason="needs fzf")
 @pytest.mark.parametrize(
     ("query", "matched"),
     [
@@ -170,9 +182,7 @@ def fzf_filter(rows: list[str], query: str) -> list[str]:
         (SHOWN, []),
     ],
 )
-def test_fzf_matches_project_labels_only(root, monkeypatch, query, matched):
-    monkeypatch.delenv("FZF_DEFAULT_OPTS", raising=False)
-    monkeypatch.delenv("FZF_DEFAULT_OPTS_FILE", raising=False)
+def test_fzf_matches_project_labels_only(root, real_fzf, query, matched):
     registry = registry_for(root)
     rows = picker.rows(registry, STATUSES, LATTE, 60)
     found = picker.found_rows(registry, STATUSES, LATTE, 60)
@@ -180,10 +190,7 @@ def test_fzf_matches_project_labels_only(root, monkeypatch, query, matched):
     assert sorted(fzf_filter(found, query)) == matched
 
 
-@pytest.mark.skipif(not shutil.which("fzf"), reason="needs fzf")
-def test_fzf_ranks_ties_by_label_then_order(monkeypatch):
-    monkeypatch.delenv("FZF_DEFAULT_OPTS", raising=False)
-    monkeypatch.delenv("FZF_DEFAULT_OPTS_FILE", raising=False)
+def test_fzf_ranks_ties_by_label_then_order(real_fzf):
     names = ("abc", "ab", "xab")
     registry = Registry((), tuple(Project(name=n, icon="I", path=f"/{n}") for n in names))
     # A status makes a row longer; it doesn't rank it lower.
