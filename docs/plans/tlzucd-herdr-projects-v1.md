@@ -430,3 +430,4 @@ own diff.
 - 2026-09-26 — phase A4 landed as #5; `seen.json` dropped (herdr reuses workspace ids)
 - 2026-09-26 — phase A5 landed as #6 (nerd-fonts 3.5.1)
 - 2026-09-26 — phase A6 landed as #7
+- 2026-09-26 — phase A7 landed as #8
