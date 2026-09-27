@@ -364,7 +364,6 @@ def test_serialize_empty_registry():
         ("{home}/a/b", "~/a/b"),
         ("{home}x/a", "{home}x/a"),
         ("/elsewhere/{home}", "/elsewhere/{home}"),
-        ("relative/dir", "relative/dir"),
     ],
 )
 def test_serialize_collapses_home(home, path, written):
@@ -396,6 +395,12 @@ def test_serialize_escapes_strings(home, text):
         assert char in "\t\n" or not (ord(char) < 0x20 or ord(char) == 0x7F)
     assert roundtrip(reg) == reg
     assert roundtrip(reg).projects[0].path == f"{home}/{path}"
+
+
+@pytest.mark.parametrize("path", ["relative/dir", ".", "./a", "~no-such-user-xyz/a"])
+def test_relative_path_is_an_error(path):
+    data = {"projects": [{"name": "a", "path": path}, {"name": "a", "icon": "A", "path": "/a"}]}
+    assert errors(data) == ['projects[0]: "path" must be absolute or start with ~']
 
 
 @pytest.mark.parametrize("path", ["/a\x00b", "~a\x00b/c", "~\x00"])

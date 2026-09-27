@@ -158,8 +158,10 @@ def _entries(data: dict, section: str, errors: list[str]) -> dict:
                 problems.append(f'{where}: "{key}" must be a string')
             elif not value.strip():
                 problems.append(f'{where}: "{key}" must not be empty')
-            elif "\0" in value and key == "path":
+            elif key == "path" and "\0" in value:
                 problems.append(f'{where}: "path" must not contain NUL')
+            elif key == "path" and not os.path.isabs(os.path.expanduser(value)):
+                problems.append(f'{where}: "path" must be absolute or start with ~')
         errors.extend(problems)
         if not problems:
             built[i] = cls(**table)
