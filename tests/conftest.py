@@ -131,11 +131,39 @@ def with_empty_group(home: Path, icon: str | None = "E") -> None:
     save(Registry(groups, registry.projects), registry_path())
 
 
+def git(*args: str) -> None:
+    identity = ["-c", "user.name=Test", "-c", "user.email=test@example.com"]
+    subprocess.run(
+        ["git", *identity, "-c", "commit.gpgsign=false", *args],
+        check=True,
+        capture_output=True,
+        stdin=subprocess.DEVNULL,
+    )
+
+
+def bare_layout(path: Path) -> Path:
+    """A `.bare` layout at path: a non-git container of a bare repo and its worktree `main`."""
+    source = path.parent / f"{path.name}-source"
+    git("init", "-q", "-b", "main", str(source))
+    git("-C", str(source), "commit", "-q", "--allow-empty", "-m", "init")
+    git("clone", "-q", "--bare", str(source), str(path / ".bare"))
+    (path / ".git").write_text("gitdir: ./.bare\n")
+    git("-C", str(path), "worktree", "add", "-q", str(path / "main"), "main")
+    return path
+
+
 def registry_path() -> Path:
     return Path(os.environ["HERDR_PLUGIN_CONFIG_DIR"]) / "projects.toml"
 
 
-def ws(workspace_id: str, label: str = "", focused: bool = False, linked: bool | None = None):
+def ws(
+    workspace_id: str,
+    label: str = "",
+    focused: bool = False,
+    linked: bool | None = None,
+    **worktree: Path | str,
+):
+    """A workspace record; `worktree` adds herdr's `checkout_path`/`repo_root`."""
     record = {
         "workspace_id": workspace_id,
         "label": label,
@@ -144,6 +172,7 @@ def ws(workspace_id: str, label: str = "", focused: bool = False, linked: bool |
     }
     if linked is not None:
         record["worktree"] = {"is_linked_worktree": linked}
+        record["worktree"].update((k, str(v)) for k, v in worktree.items())
     return record
 
 

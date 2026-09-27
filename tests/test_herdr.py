@@ -31,6 +31,10 @@ def test_workspaces_keeps_herdr_order_and_worktree_hint(fake_herdr):
         active_tab_id="wS:t1",
         linked_worktree=None,
     )
+    assert (workspaces[2].checkout_path, workspaces[2].repo_root) == (
+        "/home/me/.herdr/worktrees/app/plan-phase-0",
+        "/home/me/Developer/onethingapp/app",
+    )
     assert fake_herdr.calls() == [["workspace", "list"]]
 
 

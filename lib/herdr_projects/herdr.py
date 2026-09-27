@@ -30,6 +30,9 @@ class Workspace:
     active_tab_id: str
     # herdr's `worktree.is_linked_worktree`; None when it reports no git checkout.
     linked_worktree: bool | None
+    # herdr's `worktree.checkout_path` and `worktree.repo_root` (the repo's main checkout).
+    checkout_path: str | None = None
+    repo_root: str | None = None
 
 
 @dataclass(frozen=True)
@@ -93,18 +96,25 @@ def _record(result: dict, key: str) -> dict:
 
 def _workspace(record: dict) -> Workspace:
     worktree = record.get("worktree")
+    fields = worktree if isinstance(worktree, dict) else {}
     try:
         return Workspace(
             id=record["workspace_id"],
             label=record.get("label", ""),
             focused=bool(record.get("focused")),
             active_tab_id=record["active_tab_id"],
-            linked_worktree=bool(worktree.get("is_linked_worktree"))
+            linked_worktree=bool(fields.get("is_linked_worktree"))
             if isinstance(worktree, dict)
             else None,
+            checkout_path=_text(fields.get("checkout_path")),
+            repo_root=_text(fields.get("repo_root")),
         )
     except (AttributeError, KeyError, TypeError):
         raise HerdrError("unexpected output from herdr: bad workspace record") from None
+
+
+def _text(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
 
 
 def _pane(record: dict) -> Pane:

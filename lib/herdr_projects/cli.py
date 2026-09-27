@@ -4,11 +4,12 @@ import argparse
 import contextlib
 import os
 import sys
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
 from herdr_projects import PLUGIN_ID, VERSION, herdr
-from herdr_projects.herdr import HerdrError, Workspace
+from herdr_projects.herdr import HerdrError, Pane, Workspace
 from herdr_projects.registry import (
     Group,
     Project,
@@ -19,7 +20,12 @@ from herdr_projects.registry import (
     load,
     save,
 )
-from herdr_projects.resolve import is_linked_worktree, open_instances, project_for
+from herdr_projects.resolve import (
+    is_linked_worktree,
+    open_instances,
+    present_projects,
+    project_for,
+)
 
 TOAST_TITLE = "Projects"
 
@@ -74,9 +80,17 @@ def load_registry() -> Registry:
 
 def open_projects(registry: Registry) -> dict[Project, Workspace]:
     panes = herdr.panes()
-    return open_instances(
-        registry, herdr.workspaces(), lambda w: (p := herdr.active_pane(w, panes)) and p.cwd
-    )
+    return open_instances(registry, herdr.workspaces(), located(panes))
+
+
+def presence(registry: Registry) -> dict[Project, bool]:
+    """Projects with a workspace, their own or a worktree's, and whether one is focused."""
+    panes = herdr.panes()
+    return present_projects(registry, herdr.workspaces(), located(panes))
+
+
+def located(panes: list[Pane]) -> Callable[[Workspace], str | None]:
+    return lambda w: (p := herdr.active_pane(w, panes)) and p.cwd
 
 
 def find(registry: Registry, target: str) -> Project:
@@ -98,11 +112,11 @@ def find_group(registry: Registry, name: str) -> Group:
     return group
 
 
-def status(project: Project, found: dict[Project, Workspace]) -> str | None:
+def status(project: Project, present: dict[Project, bool]) -> str | None:
     if not os.path.isdir(project.path):
         return "missing"
-    if project in found:
-        return "active" if found[project].focused else "open"
+    if project in present:
+        return "active" if present[project] else "open"
     return None
 
 
@@ -137,7 +151,7 @@ def relabel(registry: Registry, workspace_id: str | None = None) -> str:
     location = pane and pane.cwd
     if not location:
         raise Failure(f"No working directory for workspace {workspace.id}")
-    project = project_for(registry, location, workspace.linked_worktree)
+    project = project_for(registry, location, bool(workspace.linked_worktree))
     if not project:
         raise NoProject(f"No project for {collapse_home(location)}")
     label = registry.label(project)
@@ -150,7 +164,7 @@ def relabel(registry: Registry, workspace_id: str | None = None) -> str:
 def cmd_list(args: argparse.Namespace) -> int:
     registry = load_registry()
     try:
-        found = open_projects(registry)
+        found = presence(registry)
     except HerdrError as err:
         print(f"herdr-projects: no open/active status: {err}", file=sys.stderr)
         found = {}
