@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -23,7 +25,7 @@ from herdr_projects.picker import cell_width, visible_width
 from herdr_projects.registry import Group, Project, Registry, load
 from herdr_projects.theme import LATTE, MACCHIATO, paint, strip
 
-ACTIVE, OPEN, MISSING = "\uf444", "\uf4c3", "\U000f0338"
+ACTIVE, OPEN, MISSING = "\uf111", "\uf4aa", "\U000f0338"
 SHOWN, FOLDED = "\uf47c", "\uf460"
 STATUSES = {"gone": "missing", "notes": "active", "work/web": "open"}
 
@@ -32,8 +34,18 @@ def workspace(focused: bool = False) -> Workspace:
     return Workspace(id="w", label="", focused=focused, active_tab_id="t", linked_worktree=False)
 
 
+def shown(row: str) -> str:
+    """What fzf shows of a row: its first three fields, each tab one cell."""
+    return strip("\t".join(row.split("\t")[:3]).rstrip("\t"))
+
+
 def visible(row: str) -> str:
-    return strip(row.split("\t")[0])
+    return shown(row).replace("\t", " ")
+
+
+def searched(row: str) -> str:
+    """The field fzf matches a query against."""
+    return strip(row.split("\t")[1])
 
 
 def ids(rows: list[str]) -> list[str]:
@@ -90,9 +102,9 @@ def test_clip(text, width, left, clipped):
 def test_rows_are_groups_with_their_projects_then_the_ungrouped(root):
     rows = picker.rows(registry_for(root), STATUSES, LATTE, 40)
     assert [visible(row) for row in rows] == [
-        line(f"{SHOWN} H  home", "1 project · 0 open", 40),
+        line(f"{SHOWN} H  home", "0 / 1", 40),
         line("└ H  web  ~/home-web", "", 40),
-        line(f"{SHOWN} W  work", "2 projects · 1 open", 40),
+        line(f"{SHOWN} W  work", "1 / 2", 40),
         line("│ W  api  ~/api", "", 40),
         line("└ W  web  ~/web", OPEN, 40),
         line("G  gone   ~/gone", MISSING, 40),
@@ -109,10 +121,80 @@ def test_rows_are_groups_with_their_projects_then_the_ungrouped(root):
     ]
 
 
+def test_searching_lists_every_project_by_its_whole_label(root):
+    found = picker.found_rows(registry_for(root), STATUSES, LATTE, 40)
+    assert [visible(row) for row in found] == [
+        line("H  home/web  ~/home-web", "", 40),
+        line("W  work/api  ~/api", "", 40),
+        line("W  work/web  ~/web", OPEN, 40),
+        line("G  gone      ~/gone", MISSING, 40),
+        line("N  notes     ~/notes", ACTIVE, 40),
+    ]
+    assert ids(found) == ["p:home/web", "p:work/api", "p:work/web", "p:gone", "p:notes"]
+
+
+def test_only_a_projects_label_is_searched(root):
+    registry = registry_for(root)
+    rows = picker.rows(registry, STATUSES, LATTE, 40)
+    found = picker.found_rows(registry, STATUSES, LATTE, 40)
+    assert [searched(row) for row in rows] == [""] * len(rows)
+    assert [searched(row) for row in found] == [id[2:] for id in ids(found)]
+    assert shown(found[1]) == line("W \twork/api\t ~/api", "", 40)
+
+
+def fzf_filter(rows: list[str], query: str) -> list[str]:
+    done = subprocess.run(
+        ["fzf", "--ansi", "--filter", query, *picker.SEARCH],
+        input="".join(f"{row}\n" for row in rows),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return ids(done.stdout.splitlines())
+
+
+@pytest.mark.skipif(not shutil.which("fzf"), reason="needs fzf")
+@pytest.mark.parametrize(
+    ("query", "matched"),
+    [
+        ("work", ["p:work/api", "p:work/web"]),
+        ("wkapi", ["p:work/api"]),
+        ("home/web", ["p:home/web"]),
+        ("notes", ["p:notes"]),
+        ("home-web", []),  # a path
+        ("~", []),
+        ("W", []),  # an icon, matched case-sensitively
+        ("1", []),  # a count
+        ("/ 2", []),
+        (ACTIVE, []),
+        (SHOWN, []),
+    ],
+)
+def test_fzf_matches_project_labels_only(root, monkeypatch, query, matched):
+    monkeypatch.delenv("FZF_DEFAULT_OPTS", raising=False)
+    monkeypatch.delenv("FZF_DEFAULT_OPTS_FILE", raising=False)
+    registry = registry_for(root)
+    rows = picker.rows(registry, STATUSES, LATTE, 60)
+    found = picker.found_rows(registry, STATUSES, LATTE, 60)
+    assert fzf_filter(rows, query) == []
+    assert sorted(fzf_filter(found, query)) == matched
+
+
+@pytest.mark.skipif(not shutil.which("fzf"), reason="needs fzf")
+def test_fzf_ranks_ties_by_label_then_order(monkeypatch):
+    monkeypatch.delenv("FZF_DEFAULT_OPTS", raising=False)
+    monkeypatch.delenv("FZF_DEFAULT_OPTS_FILE", raising=False)
+    names = ("abc", "ab", "xab")
+    registry = Registry((), tuple(Project(name=n, icon="I", path=f"/{n}") for n in names))
+    # A status makes a row longer; it doesn't rank it lower.
+    found = picker.found_rows(registry, {"ab": "active"}, LATTE, 40)
+    assert fzf_filter(found, "ab") == ["p:ab", "p:abc", "p:xab"]
+
+
 def test_a_folded_group_hides_its_projects(root):
     rows = picker.rows(registry_for(root), STATUSES, LATTE, 40, folded={"work"})
     assert ids(rows) == ["g:home", "p:home/web", "g:work", "p:gone", "p:notes"]
-    assert visible(rows[2]) == line(f"{FOLDED} W  work", "2 projects · 1 open", 40)
+    assert visible(rows[2]) == line(f"{FOLDED} W  work", "1 / 2", 40)
     # Columns are sized over every project, so folding moves nothing.
     assert visible(rows[3]) == line("G  gone   ~/gone", MISSING, 40)
 
@@ -121,7 +203,7 @@ def test_an_empty_group_is_a_header_alone():
     registry = Registry((Group(name="later"),), (Project(name="p", icon="P", path="/p"),))
     rows = picker.rows(registry, {}, LATTE, 30)
     assert [visible(row) for row in rows] == [
-        line(f"{SHOWN} {picker.ICO_GROUP}  later", "0 projects", 30),
+        line(f"{SHOWN} {picker.ICO_GROUP}  later", "0 / 0", 30),
         line("P  p  /p", "", 30),
     ]
     assert ids(rows) == ["g:later", "p:p"]
@@ -134,21 +216,21 @@ def test_open_counts_active_and_open_projects(tmp_path):
     )
     known = {"g/a": "active", "g/b": "open", "g/c": "missing"}
     [head, *_] = picker.rows(registry, known, LATTE, 40)
-    assert visible(head).endswith("4 projects · 2 open")
+    assert visible(head).endswith("2 / 4")
 
 
 @pytest.mark.parametrize(
     ("width", "tail"),
-    [(29, "2 projects · 1 open"), (28, "2 projects"), (20, "2 projects"), (19, "")],
+    [(15, "1 / 2"), (14, "")],
 )
-def test_a_narrow_header_drops_the_open_count_then_the_project_count(root, width, tail):
+def test_a_narrow_header_drops_the_counts(root, width, tail):
     head = picker.rows(registry_for(root), STATUSES, LATTE, width)[2]
     assert visible(head) == line(f"{SHOWN} W  work", tail, width)
 
 
 def test_a_long_group_name_is_clipped_before_the_counts_go():
     registry = Registry((Group(name="a-long-group-name", icon="G"),), ())
-    assert visible(picker.rows(registry, {}, LATTE, 24)[0]) == f"{SHOWN} G  a-long-… 0 projects"
+    assert visible(picker.rows(registry, {}, LATTE, 24)[0]) == f"{SHOWN} G  a-long-group… 0 / 0"
 
 
 @pytest.mark.parametrize("pal", [LATTE, MACCHIATO])
@@ -158,12 +240,11 @@ def test_header_and_spine_colours(root, pal):
     assert work.startswith(paint(SHOWN, pal["overlay1"]) + " " + paint("W", pal["mauve"]))
     assert paint("work", pal["text"], bold=True) in work
     assert work.endswith(
-        paint("2 projects", pal["subtext"])
-        + paint(" · ", pal["overlay0"], dim=True)
-        + paint("1 open", pal["green"])
-        + "\tg:work"
+        paint("1", pal["green"]) + paint(" / 2", pal["overlay0"], dim=True) + "\t\t\tg:work"
     )
-    assert paint("0 open", pal["overlay1"]) in home
+    assert home.endswith(
+        paint("0", pal["overlay1"]) + paint(" / 1", pal["overlay0"], dim=True) + "\t\t\tg:home"
+    )
     assert rows[3].startswith(paint("\u2502", pal["overlay0"], dim=True) + " ")
     assert rows[4].startswith(paint("\u2514", pal["overlay0"], dim=True) + " ")
     folded = picker.rows(registry_for(root), STATUSES, pal, 60, folded={"work"})[2]
@@ -178,7 +259,8 @@ def test_rows_fill_the_width(root, tmp_path, width):
     for registry in (registry_for(root), wide(tmp_path), empty):
         for folded in (set(), {"work", "日本"}):
             rows = picker.rows(registry, STATUSES, LATTE, width, folded)
-            assert [visible_width(row.split("\t")[0]) for row in rows] == [width] * len(rows)
+            rows += picker.found_rows(registry, STATUSES, LATTE, width)
+            assert [visible_width(visible(row)) for row in rows] == [width] * len(rows)
 
 
 def test_rows_align_after_wide_glyphs(tmp_path):
@@ -229,13 +311,28 @@ def test_a_narrow_row_clips_the_path_from_the_left_then_the_label():
 def test_colour_spans(root, pal, status, glyph, colour, bold):
     registry = Registry((), (Project(name="p", icon="P", path=str(root / "notes")),))
     [row] = picker.rows(registry, {"p": status}, pal, 40)
-    assert paint("p", pal["text"], bold=True) in row
-    assert paint("~/notes", pal["overlay0"], dim=True) in row
-    assert row.endswith(paint(glyph, pal[colour], bold=bold) + "\tp:p")
+    [found] = picker.found_rows(registry, {"p": status}, pal, 40)
+    for each in (row, found):
+        assert paint("p", pal["text"]) in each
+        assert paint("~/notes", pal["overlay0"], dim=True) in each
+    assert row.endswith(paint(glyph, pal[colour], bold=bold) + "\t\t\tp:p")
+    assert found.endswith(paint(glyph, pal[colour], bold=bold) + "\tp:p")
+
+
+@pytest.mark.parametrize("pal", [LATTE, MACCHIATO])
+def test_only_group_names_are_bold(root, pal):
+    rows = picker.rows(registry_for(root), STATUSES, pal, 60)
+    found = picker.found_rows(registry_for(root), STATUSES, pal, 60)
+    bold = [row for row in rows + found if theme.sgr(pal["text"], bold=True) in row]
+    assert bold == [rows[0], rows[2]]
+    assert paint("home", pal["text"], bold=True) in rows[0]
+    assert paint("api", pal["text"]) in rows[3]
+    assert paint("work/api", pal["text"]) in found[1]
 
 
 def test_rows_of_an_empty_registry():
     assert picker.rows(Registry(), {}, LATTE, 80) == []
+    assert picker.found_rows(Registry(), {}, LATTE, 80) == []
 
 
 def test_invalid_row_is_red_and_selects_nothing():
@@ -310,13 +407,13 @@ def test_statuses_ask_herdr(root, herdr):
 
 def test_build_asks_herdr_for_statuses(root, herdr):
     open_workspaces(herdr, (ws("w1", focused=True), root / "notes"))
-    rows, valid, _ = picker.build(LATTE, 40)
+    rows, _, valid, _ = picker.build(LATTE, 40)
     assert valid
     assert visible(rows[6]) == line("N  notes  ~/notes", ACTIVE, 40)
 
 
 def test_build_with_known_statuses_leaves_herdr_alone(root, herdr):
-    rows, valid, _ = picker.build(LATTE, 40, {"work/api": "open"})
+    rows, _, valid, _ = picker.build(LATTE, 40, {"work/api": "open"})
     assert valid
     assert visible(rows[3]).endswith(OPEN)
     assert herdr.calls() == []
@@ -324,7 +421,7 @@ def test_build_with_known_statuses_leaves_herdr_alone(root, herdr):
 
 def test_build_without_herdr_still_lists(root, fake_herdr):
     fake_herdr.respond("workspace list", fake_herdr.error("no server"))
-    rows, valid, _ = picker.build(LATTE, 40)
+    rows, _, valid, _ = picker.build(LATTE, 40)
     assert valid
     assert len(rows) == 7
     assert not any(ACTIVE in row or OPEN in row for row in rows)
@@ -333,9 +430,10 @@ def test_build_without_herdr_still_lists(root, fake_herdr):
 
 def test_build_an_invalid_registry_is_one_error_row(root, herdr):
     registry_path().write_text('[[projects]]\nname = "a"\n\n[[projects]]\nname = "b"\n')
-    rows, valid, _ = picker.build(LATTE, 80)
+    rows, found, valid, _ = picker.build(LATTE, 80)
     assert not valid
     assert len(rows) == 1
+    assert found == []
     assert visible(rows[0]).startswith(f"{picker.ICO_ERROR}  projects[0]: missing required")
     assert rows[0].endswith("\t")
     assert herdr.calls() == []
@@ -556,7 +654,8 @@ def test_an_invalid_registry_can_still_be_edited(root, herdr, editor):
 
 @pytest.fixture
 def fzf(tmp_path, monkeypatch):
-    """A fake fzf on PATH: prints $FZF_OUT, exits $FZF_EXIT, and logs its argv and input."""
+    """A fake fzf on PATH: prints $FZF_OUT, exits $FZF_EXIT, and logs its argv and input, and
+    the lists its `change` binding reloads with a query (`searching`) and without (`cleared`)."""
     directory = tmp_path / "fzf"
     directory.mkdir()
     script = directory / "fzf"
@@ -564,6 +663,11 @@ def fzf(tmp_path, monkeypatch):
         "#!/bin/sh\n"
         f'printf "%s\\n" "$@" > {directory}/args\n'
         f"cat > {directory}/input\n"
+        "for arg; do case $arg in change:reload-sync:*) change=${arg#*sync:};; esac; done\n"
+        'if [ -n "$change" ]; then\n'
+        f'  FZF_QUERY=x sh -c "$change" > {directory}/searching\n'
+        f'  FZF_QUERY= sh -c "$change" > {directory}/cleared\n'
+        "fi\n"
         'printf "%b" "$FZF_OUT"\n'
         "exit ${FZF_EXIT:-0}\n"
     )
@@ -579,18 +683,31 @@ def test_choose_runs_fzf_with_the_expected_keys(fzf, monkeypatch):
     assert "--ansi" in args
     assert args[args.index("--expect") + 1] == "ctrl-r,ctrl-a,ctrl-e,ctrl-d,ctrl-o"
     assert args[args.index("--delimiter") + 1] == "\t"
-    assert args[args.index("--with-nth") + 1] == "1"
+    assert args[args.index("--with-nth") + 1] == "1..3"
     assert args[args.index("--header") + 1 : args.index("--header") + 3] == ["notice", "keys"]
     assert (fzf / "input").read_text() == "row a\twork/a\nrow b\twork/b\n"
 
 
-@pytest.mark.parametrize(("at", "bind"), [(0, None), (1, None), (3, "load:pos(3)")])
+def test_choose_searches_a_list_of_project_labels(fzf, monkeypatch):
+    monkeypatch.setenv("FZF_OUT", "\\n")
+    rows = ["head\t\t\tg:w", "└ a\t\t\tp:w/a"]
+    found = ["I \tw/a\t ~/a\tp:w/a"]
+    picker.choose(rows, "keys", found=found)
+    args = (fzf / "args").read_text().split("\n")
+    assert args[args.index("--nth") + 1] == "2"
+    assert args[args.index("--tabstop") + 1] == "1"
+    assert args[args.index("--with-shell") + 1] == "sh -c"
+    assert (fzf / "searching").read_text() == "I \tw/a\t ~/a\tp:w/a\n"
+    assert (fzf / "cleared").read_text() == "head\t\t\tg:w\n└ a\t\t\tp:w/a\n"
+
+
+@pytest.mark.parametrize(("at", "bind"), [(0, None), (1, None), (3, "load:pos(3)+unbind(load)")])
 def test_choose_starts_on_a_row(fzf, monkeypatch, at, bind):
     monkeypatch.setenv("FZF_OUT", "\\n")
     picker.choose(["a\tp:a", "b\tp:b", "c\tg:c"], "keys", at)
     args = (fzf / "args").read_text().split("\n")
     binds = [args[i + 1] for i, arg in enumerate(args) if arg == "--bind"]
-    assert binds == ([bind] if bind else [])
+    assert [b for b in binds if b.startswith("load:")] == ([bind] if bind else [])
 
 
 @pytest.mark.parametrize(
@@ -624,15 +741,21 @@ def positions() -> list[int]:
 
 
 @pytest.fixture
-def session(fzf, monkeypatch, positions):
-    """Scripted fzf results for `picker.run`; records the rows and header of each call, and
-    the row it starts on in `positions`."""
+def searches() -> list[list[str]]:
+    return []
+
+
+@pytest.fixture
+def session(fzf, monkeypatch, positions, searches):
+    """Scripted fzf results for `picker.run`; records the rows and header of each call, the
+    row it starts on in `positions` and the rows it searches in `searches`."""
     calls: list[tuple[list[str], str]] = []
     answers: list = []
 
-    def choose(lines, header, at=0):
+    def choose(lines, header, at=0, found=()):
         calls.append((list(lines), header))
         positions.append(at)
+        searches.append(list(found))
         return answers.pop(0)
 
     monkeypatch.setattr(picker, "choose", choose)
@@ -681,7 +804,7 @@ def test_run_renders_at_the_popups_width(root, herdr, session, monkeypatch):
     monkeypatch.setenv("COLUMNS", "61")
     answers += [None]
     assert picker.run() == 0
-    assert {visible_width(row.split("\t")[0]) for row in calls[0][0]} == {58}
+    assert {visible_width(visible(row)) for row in calls[0][0]} == {58}
 
 
 def test_run_uses_the_theme_it_is_given(root, herdr, session, monkeypatch):
@@ -727,7 +850,7 @@ def test_run_reloads_after_a_delete(root, herdr, session, monkeypatch):
 
 
 def test_run_folds_a_group_on_enter_and_stays_on_its_header(
-    root, herdr, session, positions, monkeypatch
+    root, herdr, session, positions, searches, monkeypatch
 ):
     answers, calls = session
     known = {"work/web": "open"}
@@ -741,6 +864,9 @@ def test_run_folds_a_group_on_enter_and_stays_on_its_header(
         picker.build(LATTE, width, known)[0],
     ]
     assert positions == [0, 3, 3]
+    # A folded group's projects are still found.
+    everything = picker.found_rows(registry_for(root), known, LATTE, width)
+    assert searches == [everything] * 3
     assert {header for _, header in calls} == {picker.header(LATTE, True)}
     # Folding reuses the statuses it has rather than asking herdr again.
     assert herdr.calls() == []

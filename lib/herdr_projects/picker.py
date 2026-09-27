@@ -13,12 +13,14 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import termios
 import time
 import tty
 import unicodedata
 from collections.abc import Collection
 from pathlib import Path
+from shlex import quote
 
 from herdr_projects import flow, herdr, theme
 from herdr_projects.cli import (
@@ -56,8 +58,8 @@ POPUP_RETRY_SECONDS = 3.0
 LIST_CHROME = 3
 MIN_WIDTH = 20
 
-ICO_ACTIVE = "\uf444"  # nf-oct-dot_fill
-ICO_OPEN = "\uf4c3"  # nf-oct-dot
+ICO_ACTIVE = "\uf111"  # nf-fa-circle
+ICO_OPEN = "\uf4aa"  # nf-oct-circle
 ICO_MISSING = "\U000f0338"  # nf-md-link_off
 ICO_ERROR = "\uf421"  # nf-oct-alert
 ICO_ENTER = "\u21b5"  # downwards arrow with corner leftwards
@@ -76,6 +78,15 @@ STATUS_STYLES = {
 GAP = "  "
 INDENT = 2  # a spine glyph and a space
 NAME_ROOM = 6  # a header's name keeps this much before the counts go
+# A row's fields: what fzf shows before the label, the label, what it shows after, and the
+# row's id. fzf matches only the label, which only rows listed while searching fill in;
+# the others show everything in the first field. A tab shows as one cell. Ties go to the
+# shorter label, not the shorter row, then to the list's order.
+SEARCH = (
+    *("--delimiter", "\t", "--with-nth", "1..3", "--nth", "2", "--tabstop", "1"),
+    *("--tiebreak", "chunk,index"),
+)
+UNSEARCHED = "\t\t\t"
 
 KEYS = ("ctrl-r", "ctrl-a", "ctrl-e", "ctrl-d", "ctrl-o")
 PILLS = ((ICO_ENTER, "open"), ("^a", "add"), ("^e", "edit"))
@@ -140,6 +151,19 @@ def list_width() -> int:
     return max(columns - LIST_CHROME, MIN_WIDTH)
 
 
+def grouped(registry: Registry) -> tuple[dict[str, list[Project]], list[Project]]:
+    """Each group's projects, and the ungrouped ones."""
+    members = {g.name: [p for p in registry.projects if p.group == g.name] for g in registry.groups}
+    return members, [p for p in registry.projects if p.group not in members]
+
+
+def icon_column(registry: Registry) -> tuple[dict[Project, str], int]:
+    """Each project's icon, and the width of the icon column."""
+    icons = {p: registry.icon(p) or "" for p in registry.projects}
+    group_icons = [g.icon or ICO_GROUP for g in registry.groups]
+    return icons, max(map(cell_width, [*icons.values(), *group_icons]), default=0)
+
+
 def rows(
     registry: Registry,
     statuses: dict[str, str],
@@ -147,13 +171,10 @@ def rows(
     width: int,
     folded: Collection[str] = (),
 ) -> list[str]:
-    """fzf input: each group's header, then its projects on a spine unless folded, then the
-    ungrouped projects. After a tab, `g:<group>` or `p:<bare label>`."""
-    members = {g.name: [p for p in registry.projects if p.group == g.name] for g in registry.groups}
-    loose = [p for p in registry.projects if p.group not in members]
-    icons = {p: registry.icon(p) or "" for p in registry.projects}
-    group_icons = [g.icon or ICO_GROUP for g in registry.groups]
-    icon_width = max(map(cell_width, [*icons.values(), *group_icons]), default=0)
+    """fzf's list without a query: each group's header, then its projects on a spine unless
+    folded, then the ungrouped projects. Ids are `g:<group>` or `p:<bare label>`."""
+    members, loose = grouped(registry)
+    icons, icon_width = icon_column(registry)
     label_end = max(
         [INDENT + cell_width(p.name) for group in members.values() for p in group]
         + [cell_width(p.bare_label) for p in loose],
@@ -176,6 +197,18 @@ def rows(
     return lines + [row(p) for p in loose]
 
 
+def found_rows(registry: Registry, statuses: dict[str, str], pal: Palette, width: int) -> list[str]:
+    """fzf's list while searching: every project in the list's order, labelled `group/name`."""
+    members, loose = grouped(registry)
+    icons, icon_width = icon_column(registry)
+    columns = (icon_width, max((cell_width(p.bare_label) for p in registry.projects), default=0))
+    projects = [p for group in members.values() for p in group] + loose
+    return [
+        project_row(p, icons[p], statuses.get(p.bare_label), pal, width, columns, found=True)
+        for p in projects
+    ]
+
+
 def group_row(
     group: Group,
     members: list[Project],
@@ -185,26 +218,21 @@ def group_row(
     icon_width: int,
     folded: bool,
 ) -> str:
-    """A group's header: its name, then `N projects · k open` at the end of `width` cells,
-    which give way to the name in a narrow popup."""
+    """A group's header: its name, then `k / N`, k of its N projects open, at the end of
+    `width` cells, which give way to the name in a narrow popup."""
     icon = group.icon or ICO_GROUP
     head = paint(ICO_FOLDED if folded else ICO_SHOWN, pal["overlay1"]) + " "
     head += paint(icon, pal["mauve"] if group.icon else pal["overlay1"])
     head += " " * (icon_width - cell_width(icon)) + GAP
-    count = len(members)
     opened = sum(statuses.get(p.bare_label) in ("active", "open") for p in members)
-    total = paint(f"{count} project{'' if count == 1 else 's'}", pal["subtext"])
-    tails = [total, ""]
-    if count:
-        tail = paint(" · ", pal["overlay0"], dim=True)
-        tail += paint(f"{opened} open", pal["green"] if opened else pal["overlay1"])
-        tails.insert(0, total + tail)
-    for tail in tails:
+    counts = paint(str(opened), pal["green"] if opened else pal["overlay1"])
+    counts += paint(f" / {len(members)}", pal["overlay0"], dim=True)
+    for tail in (counts, ""):
         room = width - visible_width(head) - visible_width(tail) - 1
         if room >= min(cell_width(group.name), NAME_ROOM):
             break
     name = paint(clip(group.name, room), pal["text"], bold=True)
-    return justify(head + name, tail, width) + "\tg:" + group.name
+    return justify(head + name, tail, width) + UNSEARCHED + "g:" + group.name
 
 
 def project_row(
@@ -215,22 +243,29 @@ def project_row(
     width: int,
     columns: tuple[int, int],
     lead: str = "",
+    found: bool = False,
 ) -> str:
     """One project's row, after `lead`: its spine under a group's header, where the label is
     just its name. `columns` are the icon width and the cell the label column ends at, counted
-    from the row's start. The path gives way first."""
+    from the row's start. The path gives way first. A `found` row's label is searched."""
     icon_width, label_end = columns
     room = width - icon_width - len(GAP) - len(GAP) - 1
     label_end = min(label_end, room)
     label_width = label_end - visible_width(lead)
-    label = clip(project.name if lead else project.bare_label, label_width)
+    name = clip(project.name if lead else project.bare_label, label_width)
     path = clip(collapse_home(project.path), room - label_end - len(GAP), left=True)
-    left = lead + pad(icon, icon_width) + GAP + paint(label, pal["text"], bold=True)
+    head, label = lead + pad(icon, icon_width) + GAP, paint(name, pal["text"])
+    tail = ""
     if path:
-        left += " " * (label_width - cell_width(label)) + GAP
-        left += paint(path, pal["overlay0"], dim=True)
+        tail = " " * (label_width - cell_width(name)) + GAP + paint(path, pal["overlay0"], dim=True)
     glyph, colour, bold = STATUS_STYLES.get(state or "", (" ", "text", False))
-    return justify(left, paint(glyph, pal[colour], bold=bold), width) + "\tp:" + project.bare_label
+    row = justify(head + label + tail, paint(glyph, pal[colour], bold=bold), width)
+    ident = "p:" + project.bare_label
+    if not found:
+        return row + UNSEARCHED + ident
+    # Spaces either side of the label, which tabs stand in for.
+    tail = row[len(head + label) + 1 :]
+    return head[:-1] + "\t" + label + "\t" + tail + "\t" + ident
 
 
 def invalid_row(message: str, pal: Palette, width: int) -> str:
@@ -258,18 +293,19 @@ def build(
     width: int,
     known: dict[str, str] | None = None,
     folded: Collection[str] = (),
-) -> tuple[list[str], bool, dict[str, str]]:
-    """The list's rows, whether the registry is valid, and the statuses they show. An invalid
-    registry is one row with its first error.
+) -> tuple[list[str], list[str], bool, dict[str, str]]:
+    """The list's rows, without a query and while searching, whether the registry is valid, and
+    the statuses they show. An invalid registry is one row with its first error.
 
     Statuses are asked for unless `known`.
     """
     try:
         registry = load(default_path())
     except RegistryError as err:
-        return [invalid_row(err.messages[0], pal, width)], False, {}
+        return [invalid_row(err.messages[0], pal, width)], [], False, {}
     known = statuses(registry) if known is None else known
-    return rows(registry, known, pal, width, folded), True, known
+    found = found_rows(registry, known, pal, width)
+    return rows(registry, known, pal, width, folded), found, True, known
 
 
 def popup(add: bool = False) -> int:
@@ -334,10 +370,10 @@ def run(add: bool = False) -> int:
     folded: set[str] = set()
     cursor = None
     while True:
-        lines, valid, known = build(pal, list_width(), known, folded)
+        lines, found, valid, known = build(pal, list_width(), known, folded)
         at = flow.position(lines, lambda row: row.rpartition("\t")[2], cursor) if cursor else 0
         try:
-            picked = choose(lines, header(pal, valid, notice), at)
+            picked = choose(lines, header(pal, valid, notice), at, found)
         except Failure as err:
             return fail_in_popup(str(err))
         if picked is None:
@@ -353,19 +389,26 @@ def run(add: bool = False) -> int:
             return 0
 
 
-def choose(lines: list[str], header: str, at: int = 0) -> tuple[str, str | None] | None:
-    """Run fzf, starting on row `at` (1-based): None when cancelled, else the key pressed and
-    the selected row's id."""
-    args = ["fzf", "--ansi", "--delimiter", "\t", "--with-nth", "1", "--expect", ",".join(KEYS)]
-    args += ["--header", header, "--prompt", "> ", *flow.LAYOUT]
-    if at > 1:
-        args += ["--bind", f"load:pos({at})"]
-    done = subprocess.run(
-        args,
-        input="".join(f"{line}\n" for line in lines),
-        stdout=subprocess.PIPE,
-        encoding="utf-8",
-    )
+def choose(
+    lines: list[str], header: str, at: int = 0, found: Collection[str] = ()
+) -> tuple[str, str | None] | None:
+    """Run fzf on `lines`, starting on row `at` (1-based), and on `found` while there is a
+    query: None when cancelled, else the key pressed and the selected row's id."""
+    listed = "".join(f"{line}\n" for line in lines)
+    with tempfile.TemporaryDirectory(prefix="herdr-projects-") as scratch:
+        unsearched, searched = Path(scratch) / "lines", Path(scratch) / "found"
+        unsearched.write_text(listed, encoding="utf-8")
+        searched.write_text("".join(f"{line}\n" for line in found), encoding="utf-8")
+        reload = (
+            f'test -n "$FZF_QUERY" && cat {quote(str(searched))} || cat {quote(str(unsearched))}'
+        )
+        args = ["fzf", "--ansi", *SEARCH, "--expect", ",".join(KEYS), "--with-shell", "sh -c"]
+        args += ["--header", header, "--prompt", "> ", *flow.LAYOUT]
+        args += ["--bind", f"change:reload-sync:{reload}"]
+        if at > 1:
+            # load comes again after each reload.
+            args += ["--bind", f"load:pos({at})+unbind(load)"]
+        done = subprocess.run(args, input=listed, stdout=subprocess.PIPE, encoding="utf-8")
     if done.returncode == 130:
         return None
     # 1 is no selection, which --expect keys can still end with.

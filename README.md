@@ -14,11 +14,11 @@ You list the projects in a config file, or add them from a popup. One key opens 
  ↵  open    ^a  add    ^e  edit 
 ^r rename · ^d delete · ^o edit file · esc close
 
-     oss                                  1 project · 1 open
-  └   ripgrep  ~/src/oss/ripgrep                            
-     sandbox                                      0 projects
-     work                                3 projects · 1 open
-  │   api      ~/src/work/api                               
+     oss                                               1 / 1
+  └   ripgrep  ~/src/oss/ripgrep                            
+     sandbox                                           0 / 0
+     work                                              1 / 3
+  │   api      ~/src/work/api                               
   │   docs     ~/src/work/docs                              󰌸
   └   web      ~/src/work/web
     dotfiles   ~/.dotfiles
@@ -158,14 +158,22 @@ Run `herdr server reload-config`, or restart Herdr, to pick up new keys. `herdr 
 
 ## The picker
 
-Groups come first, sorted by name, each on a header row: its icon (a folder when it has none) and name, then how many projects it has and how many of them are open. Its projects follow on a spine, sorted by name, each showing its icon, name, path and status. Projects without a group come last, with their whole label. Rows fill the popup's width; in a narrow one, paths lose their start first. Type to filter.
+Groups come first, sorted by name, each on a header row: its icon (a folder when it has none) and name, then `open / total`, how many of its projects are open out of how many it has. Its projects follow on a spine, sorted by name, each showing its icon, name, path and status. Projects without a group come last, with their whole label. Rows fill the popup's width; in a narrow one, paths lose their start first.
 
-`enter` on a group's header folds the group, hiding its projects, from the filter too; `enter` again unfolds it. Folds last until the picker closes.
+`enter` on a group's header folds the group, hiding its projects; `enter` again unfolds it. Folds last until the picker closes.
+
+Type to search. The search matches projects' labels, `group/name`, and nothing else: not group headers, paths, counts or icons. While you type, the picker lists the matching projects by their whole label, folded groups' too, and goes back to groups when the query is empty. `wo` finds:
+
+```
+    work/api     ~/src/work/api                             
+    work/web     ~/src/work/web
+    work/docs    ~/src/work/docs                            󰌸
+```
 
 | Status | |
 |---|---|
-| `` | Open, in the workspace you're in |
-| `` | Open in another workspace |
+| `` | Open, in the workspace you're in |
+| `` | Open in another workspace |
 | `󰌸` | The path doesn't exist, so `enter` can't open it |
 
 | Key | |

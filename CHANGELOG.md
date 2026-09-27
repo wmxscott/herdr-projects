@@ -11,7 +11,8 @@ All notable changes to this project are documented here. The format follows [Kee
 - A project list in `projects.toml`, in the plugin's config directory: groups and projects, each with a Nerd Font icon, validated on load. Saves are atomic and keep a symlinked file a symlink.
 - Workspace labels derived from the list: `<icon> <group>/<name>`, or `<icon> <name>` without a group.
 - The picker popup (`open` action): open or focus a project's workspace, relabel the current workspace, and add, edit or delete projects, with a group picker and a searchable icon picker over the Nerd Fonts glyph list.
-- Grouped picker rows: each group, empty ones included, on a header row with its project and open counts, its projects on a spine under it, and ungrouped projects after the groups. `enter` on a header folds it.
+- Grouped picker rows: each group, empty ones included, on a header row with how many of its projects are open out of how many it has, its projects on a spine under it, and ungrouped projects after the groups. `enter` on a header folds it.
+- Picker search that matches projects' `group/name` labels only, listing matches by their whole label, folded groups' included.
 - Group editing from the picker: `ctrl-e` on a header renames the group, moving its projects along, and changes its icon; `ctrl-d` deletes an empty group.
 - A Catppuccin theme for the picker, Latte when light and Macchiato when dark, following the system appearance or `HERDR_PROJECTS_THEME`. Rows fill the popup's width, with dim paths and coloured status icons.
 - The `rename` action, which labels the current workspace after its project.
