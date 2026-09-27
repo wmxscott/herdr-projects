@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+"""A stand-in for `herdr` in tests; it never reaches a running herdr.
+
+Every call is appended to $FAKE_HERDR_DIR/calls.jsonl as a JSON array of its
+arguments. Answers come from $FAKE_HERDR_DIR/responses.json, which maps an
+argument prefix ("workspace get w1") to a list of answers, each
+{"stdout", "stderr", "exit", "sleep"} with all keys optional. The longest
+matching prefix wins; its answers are given in turn and the last one repeats.
+Anything unmatched exits 2.
+"""
+
+import json
+import os
+import sys
+import time
+
+args = sys.argv[1:]
+root = os.environ["FAKE_HERDR_DIR"]
+with open(os.path.join(root, "calls.jsonl"), "a") as log:
+    log.write(json.dumps(args) + "\n")
+
+try:
+    with open(os.path.join(root, "responses.json")) as f:
+        responses = json.load(f)
+except FileNotFoundError:
+    responses = {}
+
+keys = [key for key in responses if args[: len(key.split())] == key.split()]
+if not keys:
+    sys.stderr.write("fake herdr: unexpected " + " ".join(args) + "\n")
+    sys.exit(2)
+key = max(keys, key=lambda k: len(k.split()))
+
+counts_path = os.path.join(root, "counts.json")
+try:
+    with open(counts_path) as f:
+        counts = json.load(f)
+except FileNotFoundError:
+    counts = {}
+answers = responses[key]
+answer = answers[min(counts.get(key, 0), len(answers) - 1)]
+counts[key] = counts.get(key, 0) + 1
+with open(counts_path, "w") as f:
+    json.dump(counts, f)
+
+time.sleep(answer.get("sleep", 0))
+sys.stdout.write(answer.get("stdout", ""))
+sys.stderr.write(answer.get("stderr", ""))
+sys.exit(answer.get("exit", 0))
