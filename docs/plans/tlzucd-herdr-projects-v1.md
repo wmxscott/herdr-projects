@@ -427,3 +427,4 @@ own diff.
 - 2026-09-26 — phase A1 landed as #2; S10 resolved (UI-created workspaces emit `workspace.created`)
 - 2026-09-26 — phase A2 landed as #3
 - 2026-09-26 — phase A3 landed as #4
+- 2026-09-26 — phase A4 landed as #5; `seen.json` dropped (herdr reuses workspace ids)
