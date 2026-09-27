@@ -1,6 +1,6 @@
 id = "herdr-projects"
 name = "Projects"
-version = "0.1.0"
+version = "1.0.0"
 min_herdr_version = "0.9.1"
 description = "A curated list of your projects: open each as a herdr workspace, labelled with its group and name."
 platforms = ["linux", "macos"]

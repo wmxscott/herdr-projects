@@ -10,12 +10,18 @@ You list the projects in a config file, or add them from a popup. One key opens 
 
 ```
 >
-  enter open · ^r rename · ^a add · ^e edit · ^d delete · ^o edit file
-    dotfiles     ~/.dotfiles
-    oss/ripgrep  ~/src/oss/ripgrep  
-    work/api     ~/src/work/api     
-    work/docs    ~/src/work/docs    󰌸
-    work/web     ~/src/work/web
+
+ ↵  open    ^a  add    ^e  edit 
+^r rename · ^d delete · ^o edit file · esc close
+
+     oss                                  1 project · 1 open
+  └   ripgrep  ~/src/oss/ripgrep                            
+     sandbox                                      0 projects
+     work                                3 projects · 1 open
+  │   api      ~/src/work/api                               
+  │   docs     ~/src/work/docs                              󰌸
+  └   web      ~/src/work/web
+    dotfiles   ~/.dotfiles
 ```
 
 ## Requirements
@@ -152,7 +158,9 @@ Run `herdr server reload-config`, or restart Herdr, to pick up new keys. `herdr 
 
 ## The picker
 
-Each row is a project's icon, label, path and status, sorted by group and then name. Type to filter.
+Groups come first, sorted by name, each on a header row: its icon (a folder when it has none) and name, then how many projects it has and how many of them are open. Its projects follow on a spine, sorted by name, each showing its icon, name, path and status. Projects without a group come last, with their whole label. Rows fill the popup's width; in a narrow one, paths lose their start first. Type to filter.
+
+`enter` on a group's header folds the group, hiding its projects, from the filter too; `enter` again unfolds it. Folds last until the picker closes.
 
 | Status | |
 |---|---|
@@ -162,11 +170,11 @@ Each row is a project's icon, label, path and status, sorted by group and then n
 
 | Key | |
 |---|---|
-| `enter` | Open the project: focus its workspace, or create one in its directory, with its label, and focus that |
+| `enter` | Open the project: focus its workspace, or create one in its directory, with its label, and focus that. On a group's header, fold or unfold it |
 | `ctrl-r` | Label the current workspace after its project, like the `rename` action, and close |
 | `ctrl-a` | Add the focused pane's directory. If it's already a project, edit that project instead |
-| `ctrl-e` | Edit the selected project |
-| `ctrl-d` | Delete the selected project, after a `y` |
+| `ctrl-e` | Edit the selected project, or group |
+| `ctrl-d` | Delete the selected project, or empty group, after a `y`. A group with projects says to move or delete them first |
 | `ctrl-o` | Open `projects.toml` in `$EDITOR` (default `vi`), then reload |
 | `esc` | Close |
 
@@ -176,7 +184,20 @@ Adding and editing ask, in turn, for:
 2. **Group.** One of yours, `none`, or `+ new group`, which asks for the group's name and then, optionally, its icon.
 3. **Icon.** `use group icon` comes first when the group has one, then the icons you already use, then every Nerd Font glyph, searched by name.
 
-`esc` at any step throws the whole change away. A linked worktree can't be added.
+Editing a group asks for its name, then its icon: `keep current` when it has one, `no icon`, then the icons you already use, then every glyph. Renaming a group moves its projects along with it.
+
+`esc` at any step throws the whole change away. A change that breaks one of the [rules](#rules), like a group name that's taken or a group icon a project still needs, isn't saved, and the picker says why. A linked worktree can't be added.
+
+### Theme
+
+The picker is drawn in [Catppuccin](https://catppuccin.com) Latte when the system is light and Macchiato when it's dark, checked each time the picker opens:
+
+1. `HERDR_PROJECTS_THEME` in Herdr's environment, when it's `light` or `dark`. `auto`, the default, goes on to the next steps.
+2. The appearance in `${XDG_DATA_HOME:-~/.local/share}/theme-monitor/theme-change.trigger`, the file theme-monitor keeps, when it says `light` or `dark`.
+3. On macOS, the system's appearance setting.
+4. Otherwise, light.
+
+The theme colours the rows and headers, the add and edit steps' too. fzf's own prompt, pointer and match highlights keep fzf's colours, since the picker passes no `--color`. To change them, set `--color` in `FZF_DEFAULT_OPTS`, like `--color=light` for a light terminal.
 
 ## Labelling new workspaces
 
