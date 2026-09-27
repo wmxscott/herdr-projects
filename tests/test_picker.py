@@ -23,6 +23,7 @@ from herdr_projects.registry import Group, Project, Registry, load
 from herdr_projects.theme import LATTE, MACCHIATO, paint, strip
 
 ACTIVE, OPEN, MISSING = "\uf444", "\uf4c3", "\U000f0338"
+SHOWN, FOLDED = "\uf47c", "\uf460"
 STATUSES = {"gone": "missing", "notes": "active", "work/web": "open"}
 
 
@@ -32,6 +33,14 @@ def workspace(focused: bool = False) -> Workspace:
 
 def visible(row: str) -> str:
     return strip(row.split("\t")[0])
+
+
+def ids(rows: list[str]) -> list[str]:
+    return [row.rpartition("\t")[2] for row in rows]
+
+
+def line(left: str, right: str, width: int) -> str:
+    return left + " " * (width - cell_width(left) - cell_width(right)) + right
 
 
 def wide(tmp_path) -> Registry:
@@ -77,41 +86,113 @@ def test_clip(text, width, left, clipped):
     assert picker.clip(text, width, left) == clipped
 
 
-def test_rows_sorted_by_group_then_name_with_every_status(root):
-    lines = [visible(row) for row in picker.rows(registry_for(root), STATUSES, LATTE, 30)]
-    assert lines == [
-        f"{'G  gone      ~/gone':<29}{MISSING}",
-        f"{'N  notes     ~/notes':<29}{ACTIVE}",
-        f"{'H  home/web  ~/home-web':<30}",
-        f"{'W  work/api  ~/api':<30}",
-        f"{'W  work/web  ~/web':<29}{OPEN}",
+def test_rows_are_groups_with_their_projects_then_the_ungrouped(root):
+    rows = picker.rows(registry_for(root), STATUSES, LATTE, 40)
+    assert [visible(row) for row in rows] == [
+        line(f"{SHOWN} H  home", "1 project · 0 open", 40),
+        line("└ H  web  ~/home-web", "", 40),
+        line(f"{SHOWN} W  work", "2 projects · 1 open", 40),
+        line("│ W  api  ~/api", "", 40),
+        line("└ W  web  ~/web", OPEN, 40),
+        line("G  gone   ~/gone", MISSING, 40),
+        line("N  notes  ~/notes", ACTIVE, 40),
     ]
-    rows = picker.rows(registry_for(root), STATUSES, LATTE, 30)
-    assert [row.split("\t")[1] for row in rows] == [
-        "gone",
-        "notes",
-        "home/web",
-        "work/api",
-        "work/web",
+    assert ids(rows) == [
+        "g:home",
+        "p:home/web",
+        "g:work",
+        "p:work/api",
+        "p:work/web",
+        "p:gone",
+        "p:notes",
     ]
+
+
+def test_a_folded_group_hides_its_projects(root):
+    rows = picker.rows(registry_for(root), STATUSES, LATTE, 40, folded={"work"})
+    assert ids(rows) == ["g:home", "p:home/web", "g:work", "p:gone", "p:notes"]
+    assert visible(rows[2]) == line(f"{FOLDED} W  work", "2 projects · 1 open", 40)
+    # Columns are sized over every project, so folding moves nothing.
+    assert visible(rows[3]) == line("G  gone   ~/gone", MISSING, 40)
+
+
+def test_an_empty_group_is_a_header_alone():
+    registry = Registry((Group(name="later"),), (Project(name="p", icon="P", path="/p"),))
+    rows = picker.rows(registry, {}, LATTE, 30)
+    assert [visible(row) for row in rows] == [
+        line(f"{SHOWN} {picker.ICO_GROUP}  later", "0 projects", 30),
+        line("P  p  /p", "", 30),
+    ]
+    assert ids(rows) == ["g:later", "p:p"]
+
+
+def test_open_counts_active_and_open_projects(tmp_path):
+    registry = Registry(
+        (Group(name="g", icon="G"),),
+        tuple(Project(name=n, group="g", path=str(tmp_path / n)) for n in "abcd"),
+    )
+    known = {"g/a": "active", "g/b": "open", "g/c": "missing"}
+    [head, *_] = picker.rows(registry, known, LATTE, 40)
+    assert visible(head).endswith("4 projects · 2 open")
+
+
+@pytest.mark.parametrize(
+    ("width", "tail"),
+    [(29, "2 projects · 1 open"), (28, "2 projects"), (20, "2 projects"), (19, "")],
+)
+def test_a_narrow_header_drops_the_open_count_then_the_project_count(root, width, tail):
+    head = picker.rows(registry_for(root), STATUSES, LATTE, width)[2]
+    assert visible(head) == line(f"{SHOWN} W  work", tail, width)
+
+
+def test_a_long_group_name_is_clipped_before_the_counts_go():
+    registry = Registry((Group(name="a-long-group-name", icon="G"),), ())
+    assert visible(picker.rows(registry, {}, LATTE, 24)[0]) == f"{SHOWN} G  a-long-… 0 projects"
+
+
+@pytest.mark.parametrize("pal", [LATTE, MACCHIATO])
+def test_header_and_spine_colours(root, pal):
+    rows = picker.rows(registry_for(root), STATUSES, pal, 60)
+    home, work = rows[0], rows[2]
+    assert work.startswith(paint(SHOWN, pal["overlay1"]) + " " + paint("W", pal["mauve"]))
+    assert paint("work", pal["text"], bold=True) in work
+    assert work.endswith(
+        paint("2 projects", pal["subtext"])
+        + paint(" · ", pal["overlay0"], dim=True)
+        + paint("1 open", pal["green"])
+        + "\tg:work"
+    )
+    assert paint("0 open", pal["overlay1"]) in home
+    assert rows[3].startswith(paint("\u2502", pal["overlay0"], dim=True) + " ")
+    assert rows[4].startswith(paint("\u2514", pal["overlay0"], dim=True) + " ")
+    folded = picker.rows(registry_for(root), STATUSES, pal, 60, folded={"work"})[2]
+    assert folded.startswith(paint(FOLDED, pal["overlay1"]))
+    empty = picker.rows(Registry((Group(name="e"),), ()), {}, pal, 60)[0]
+    assert paint(picker.ICO_GROUP, pal["overlay1"]) in empty
 
 
 @pytest.mark.parametrize("width", [20, 33, 40, 57, 80, 137])
 def test_rows_fill_the_width(root, tmp_path, width):
-    for registry in (registry_for(root), wide(tmp_path)):
-        rows = picker.rows(registry, STATUSES, LATTE, width)
-        assert [visible_width(row.split("\t")[0]) for row in rows] == [width] * len(rows)
+    empty = Registry((Group(name="a-rather-long-empty-group"),), ())
+    for registry in (registry_for(root), wide(tmp_path), empty):
+        for folded in (set(), {"work", "日本"}):
+            rows = picker.rows(registry, STATUSES, LATTE, width, folded)
+            assert [visible_width(row.split("\t")[0]) for row in rows] == [width] * len(rows)
 
 
 def test_rows_align_after_wide_glyphs(tmp_path):
     registry = wide(tmp_path)
-    lines = [visible(row) for row in picker.rows(registry, {"bb": "missing"}, LATTE, 200)]
-    # Icons are 4 cells at most (the ZWJ sequence), labels 6 ("日本/c").
-    path_column = 4 + 2 + 6 + 2
-    for line, project in zip(lines, registry.projects, strict=True):
-        assert cell_width(line[: line.index(project.path)]) == path_column
-    assert cell_width(lines[1][:-1]) == 199
-    assert lines[1].endswith(MISSING)
+    rows = picker.rows(registry, {"bb": "missing"}, LATTE, 200)
+    assert ids(rows) == ["g:日本", "p:日本/c", "p:a", "p:bb", "p:d"]
+    lines = [visible(row) for row in rows]
+    # Icons are 4 cells at most (the ZWJ sequence); labels end 3 cells in (spine and "c").
+    path_column = 4 + 2 + 3 + 2
+    paths = {f"p:{p.bare_label}": p.path for p in registry.projects}
+    for row, text in zip(rows[1:], lines[1:], strict=True):
+        assert cell_width(text[: text.index(paths[ids([row])[0]])]) == path_column
+    assert lines[0].startswith(f"{SHOWN} 🚀    日本 ")
+    assert cell_width(lines[3][:-1]) == 199
+    assert lines[3].endswith(MISSING)
 
 
 def test_a_narrow_row_clips_the_path_from_the_left_then_the_label():
@@ -149,7 +230,7 @@ def test_colour_spans(root, pal, status, glyph, colour, bold):
     [row] = picker.rows(registry, {"p": status}, pal, 40)
     assert paint("p", pal["text"], bold=True) in row
     assert paint("~/notes", pal["overlay0"], dim=True) in row
-    assert row.endswith(paint(glyph, pal[colour], bold=bold) + "\tp")
+    assert row.endswith(paint(glyph, pal[colour], bold=bold) + "\tp:p")
 
 
 def test_rows_of_an_empty_registry():
@@ -228,13 +309,13 @@ def test_statuses_ask_herdr(root, herdr):
 
 def test_build_asks_herdr_for_statuses(root, herdr):
     open_workspaces(herdr, (ws("w1", focused=True), root / "notes"))
-    rows, valid = picker.build(LATTE, 40)
+    rows, valid, _ = picker.build(LATTE, 40)
     assert valid
-    assert visible(rows[1]) == f"{'N  notes     ~/notes':<39}{ACTIVE}"
+    assert visible(rows[6]) == line("N  notes  ~/notes", ACTIVE, 40)
 
 
 def test_build_with_known_statuses_leaves_herdr_alone(root, herdr):
-    rows, valid = picker.build(LATTE, 40, {"work/api": "open"})
+    rows, valid, _ = picker.build(LATTE, 40, {"work/api": "open"})
     assert valid
     assert visible(rows[3]).endswith(OPEN)
     assert herdr.calls() == []
@@ -242,16 +323,16 @@ def test_build_with_known_statuses_leaves_herdr_alone(root, herdr):
 
 def test_build_without_herdr_still_lists(root, fake_herdr):
     fake_herdr.respond("workspace list", fake_herdr.error("no server"))
-    rows, valid = picker.build(LATTE, 40)
+    rows, valid, _ = picker.build(LATTE, 40)
     assert valid
-    assert len(rows) == 5
+    assert len(rows) == 7
     assert not any(ACTIVE in row or OPEN in row for row in rows)
-    assert visible(rows[0]).endswith(MISSING)
+    assert visible(rows[5]).endswith(MISSING)
 
 
 def test_build_an_invalid_registry_is_one_error_row(root, herdr):
     registry_path().write_text('[[projects]]\nname = "a"\n\n[[projects]]\nname = "b"\n')
-    rows, valid = picker.build(LATTE, 80)
+    rows, valid, _ = picker.build(LATTE, 80)
     assert not valid
     assert len(rows) == 1
     assert visible(rows[0]).startswith(f"{picker.ICO_ERROR}  projects[0]: missing required")
@@ -264,7 +345,7 @@ def test_build_an_invalid_registry_is_one_error_row(root, herdr):
 
 def test_enter_opens_the_project_and_closes(root, herdr):
     open_workspaces(herdr)
-    assert picker.handle("", "notes") is None
+    assert picker.handle("", "p:notes") is None
     real = str((root / "notes").resolve())
     assert changes(herdr) == [
         ["workspace", "create", "--cwd", real, "--label", "N notes", "--focus"]
@@ -273,7 +354,7 @@ def test_enter_opens_the_project_and_closes(root, herdr):
 
 def test_enter_focuses_an_open_project(root, herdr):
     open_workspaces(herdr, (ws("w1"), root / "api/src"))
-    assert picker.handle("", "work/api") is None
+    assert picker.handle("", "p:work/api") is None
     assert changes(herdr) == [["workspace", "focus", "w1"]]
 
 
@@ -283,7 +364,7 @@ def test_enter_focuses_an_open_project(root, herdr):
 )
 def test_enter_that_fails_stays_open_with_the_reason(root, herdr, label, notice):
     open_workspaces(herdr)
-    problem = picker.handle("", label)
+    problem = picker.handle("", f"p:{label}")
     assert problem == notice
     assert isinstance(problem, picker.Problem)
     assert changes(herdr) == []
@@ -292,13 +373,13 @@ def test_enter_that_fails_stays_open_with_the_reason(root, herdr, label, notice)
 def test_enter_reports_herdrs_error(root, herdr):
     open_workspaces(herdr)
     herdr.respond("workspace create", herdr.error("no server"))
-    assert picker.handle("", "notes") == "no server"
+    assert picker.handle("", "p:notes") == "no server"
 
 
 def test_ctrl_r_renames_the_users_workspace_and_closes(root, herdr, monkeypatch):
     in_context(monkeypatch, "w1:p1")
     one_workspace(herdr, ws("w1", label="old"), root / "api/src")
-    assert picker.handle("ctrl-r", "notes") is None
+    assert picker.handle("ctrl-r", "p:notes") is None
     assert changes(herdr) == [["workspace", "rename", "w1", "W work/api"]]
     assert toasts(herdr) == ["Renamed to W work/api"]
 
@@ -313,15 +394,15 @@ def test_ctrl_r_without_a_project_stays_open(root, herdr, monkeypatch):
 def test_ctrl_a_adds_and_ctrl_e_edits_the_selection(root, herdr, monkeypatch):
     monkeypatch.setattr(flow, "add", lambda pal: f"Added in {pal['base']}")
     monkeypatch.setattr(flow, "edit", lambda label, pal: f"Updated {label} in {pal['base']}")
-    assert picker.handle("ctrl-a", "notes") == f"Added in {LATTE['base']}"
-    edited = picker.handle("ctrl-e", "notes", pal=MACCHIATO)
+    assert picker.handle("ctrl-a", "p:notes") == f"Added in {LATTE['base']}"
+    edited = picker.handle("ctrl-e", "p:notes", pal=MACCHIATO)
     assert edited == f"Updated notes in {MACCHIATO['base']}"
 
 
 @pytest.mark.parametrize("answer", ["y", "Y"])
 def test_ctrl_d_deletes_after_a_yes(root, herdr, monkeypatch, capsys, answer):
     monkeypatch.setattr(picker, "read_key", lambda: answer)
-    notice = picker.handle("ctrl-d", "work/web")
+    notice = picker.handle("ctrl-d", "p:work/web")
     assert notice == "Deleted W work/web"
     assert not isinstance(notice, picker.Problem)
     assert capsys.readouterr().out.startswith("Delete W work/web? [y/N] ")
@@ -334,7 +415,7 @@ def test_ctrl_d_deletes_after_a_yes(root, herdr, monkeypatch, capsys, answer):
 def test_ctrl_d_keeps_the_project_otherwise(root, herdr, monkeypatch, answer):
     before = registry_path().read_text()
     monkeypatch.setattr(picker, "read_key", lambda: answer)
-    assert picker.handle("ctrl-d", "work/web") == ""
+    assert picker.handle("ctrl-d", "p:work/web") == ""
     assert registry_path().read_text() == before
 
 
@@ -343,7 +424,7 @@ def test_ctrl_d_reports_a_registry_it_cannot_write(root, herdr, monkeypatch):
     config = registry_path().parent
     config.chmod(0o500)
     try:
-        notice = picker.handle("ctrl-d", "work/web")
+        notice = picker.handle("ctrl-d", "p:work/web")
     finally:
         config.chmod(0o700)
     assert notice.startswith("can't write ~/")
@@ -393,11 +474,32 @@ def test_keys_that_need_a_selection_do_nothing_without_one(root, herdr, key):
     assert herdr.calls() == []
 
 
+@pytest.mark.parametrize("key", ["", "ctrl-d", "ctrl-e"])
+def test_project_keys_on_a_group_header_do_nothing(root, herdr, monkeypatch, key):
+    monkeypatch.setattr(picker, "read_key", lambda: "y")
+    monkeypatch.setattr(flow, "edit", lambda label, pal: pytest.fail("edited"))
+    before = registry_path().read_text()
+    assert picker.handle(key, "g:work") == "Select a project"
+    assert registry_path().read_text() == before
+    assert herdr.calls() == []
+
+
+def test_keys_that_need_no_project_work_on_a_group_header(root, herdr, monkeypatch, editor):
+    in_context(monkeypatch, "w1:p1")
+    one_workspace(herdr, ws("w1", label="old"), root / "api/src")
+    monkeypatch.setattr(flow, "add", lambda pal: "Added")
+    assert picker.handle("ctrl-a", "g:work") == "Added"
+    assert picker.handle("ctrl-o", "g:work") == ""
+    assert editor.exists()
+    assert picker.handle("ctrl-r", "g:work") is None
+    assert changes(herdr) == [["workspace", "rename", "w1", "W work/api"]]
+
+
 @pytest.mark.parametrize("key", ["", "ctrl-r", "ctrl-a", "ctrl-e", "ctrl-d"])
 def test_an_invalid_registry_ignores_all_but_ctrl_o(root, herdr, monkeypatch, key):
     monkeypatch.setattr(picker, "read_key", lambda: "y")
     before = registry_path().read_text()
-    assert picker.handle(key, "notes", valid=False) == ""
+    assert picker.handle(key, "p:notes", valid=False) == ""
     assert herdr.calls() == []
     assert registry_path().read_text() == before
 
@@ -440,6 +542,15 @@ def test_choose_runs_fzf_with_the_expected_keys(fzf, monkeypatch):
     assert (fzf / "input").read_text() == "row a\twork/a\nrow b\twork/b\n"
 
 
+@pytest.mark.parametrize(("at", "bind"), [(0, None), (1, None), (3, "load:pos(3)")])
+def test_choose_starts_on_a_row(fzf, monkeypatch, at, bind):
+    monkeypatch.setenv("FZF_OUT", "\\n")
+    picker.choose(["a\tp:a", "b\tp:b", "c\tg:c"], "keys", at)
+    args = (fzf / "args").read_text().split("\n")
+    binds = [args[i + 1] for i, arg in enumerate(args) if arg == "--bind"]
+    assert binds == ([bind] if bind else [])
+
+
 @pytest.mark.parametrize(
     ("out", "code", "picked"),
     [
@@ -466,13 +577,20 @@ def test_choose_fails_when_fzf_does(fzf, monkeypatch):
 
 
 @pytest.fixture
-def session(fzf, monkeypatch):
-    """Scripted fzf results for `picker.run`; records the rows and header of each call."""
+def positions() -> list[int]:
+    return []
+
+
+@pytest.fixture
+def session(fzf, monkeypatch, positions):
+    """Scripted fzf results for `picker.run`; records the rows and header of each call, and
+    the row it starts on in `positions`."""
     calls: list[tuple[list[str], str]] = []
     answers: list = []
 
-    def choose(lines, header):
+    def choose(lines, header, at=0):
         calls.append((list(lines), header))
+        positions.append(at)
         return answers.pop(0)
 
     monkeypatch.setattr(picker, "choose", choose)
@@ -491,7 +609,7 @@ def test_run_starts_from_precomputed_statuses_then_asks_herdr(root, herdr, sessi
     path = precomputed(monkeypatch, {"notes": "open"})
     open_workspaces(herdr)
     monkeypatch.setattr(flow, "add", lambda pal: "Added")
-    answers += [("ctrl-a", "notes"), None]
+    answers += [("ctrl-a", "p:notes"), None]
     assert picker.run() == 0
     width = picker.list_width()
     assert calls[0] == (
@@ -511,7 +629,7 @@ def test_run_asks_herdr_when_the_statuses_are_unreadable(root, herdr, session, m
     open_workspaces(herdr, (ws("w1"), root / "notes"))
     answers += [None]
     assert picker.run() == 0
-    assert visible(calls[0][0][1]).endswith(OPEN)
+    assert visible(calls[0][0][6]).endswith(OPEN)
     assert not path.exists()
 
 
@@ -542,7 +660,7 @@ def test_run_uses_the_theme_it_is_given(root, herdr, session, monkeypatch):
 def test_run_closes_after_open(root, herdr, session):
     answers, calls = session
     open_workspaces(herdr)
-    answers += [("", "notes")]
+    answers += [("", "p:notes")]
     assert picker.run() == 0
     assert len(calls) == 1
     assert changes(herdr)[0][:2] == ["workspace", "create"]
@@ -552,22 +670,54 @@ def test_run_reloads_after_a_delete(root, herdr, session, monkeypatch):
     answers, calls = session
     monkeypatch.setattr(picker, "read_key", lambda: "y")
     open_workspaces(herdr)
-    answers += [("ctrl-d", "notes"), None]
+    answers += [("ctrl-d", "p:notes"), None]
     assert picker.run() == 0
-    assert len(calls[0][0]) == 5
-    assert [row.split("\t")[1] for row in calls[1][0]] == [
-        "gone",
-        "home/web",
-        "work/api",
-        "work/web",
+    assert len(calls[0][0]) == 7
+    assert ids(calls[1][0]) == [
+        "g:home",
+        "p:home/web",
+        "g:work",
+        "p:work/api",
+        "p:work/web",
+        "p:gone",
     ]
     assert calls[1][1] == picker.header(LATTE, True, "Deleted N notes")
+
+
+def test_run_folds_a_group_on_enter_and_stays_on_its_header(
+    root, herdr, session, positions, monkeypatch
+):
+    answers, calls = session
+    known = {"work/web": "open"}
+    precomputed(monkeypatch, known)
+    answers += [("", "g:work"), ("", "g:work"), None]
+    assert picker.run() == 0
+    width = picker.list_width()
+    assert [rows for rows, _ in calls] == [
+        picker.build(LATTE, width, known)[0],
+        picker.build(LATTE, width, known, {"work"})[0],
+        picker.build(LATTE, width, known)[0],
+    ]
+    assert positions == [0, 3, 3]
+    assert {header for _, header in calls} == {picker.header(LATTE, True)}
+    # Folding reuses the statuses it has rather than asking herdr again.
+    assert herdr.calls() == []
+
+
+def test_run_keeps_groups_folded_across_other_keys(root, herdr, session, positions):
+    answers, calls = session
+    open_workspaces(herdr)
+    answers += [("", "g:home"), ("ctrl-e", "g:home"), None]
+    assert picker.run() == 0
+    assert ids(calls[2][0])[:3] == ["g:home", "g:work", "p:work/api"]
+    assert calls[2][1] == picker.header(LATTE, True, "Select a project")
+    assert positions == [0, 1, 0]
 
 
 def test_run_shows_a_failure_in_red(root, herdr, session):
     answers, calls = session
     open_workspaces(herdr)
-    answers += [("", "gone"), None]
+    answers += [("", "p:gone"), None]
     assert picker.run() == 0
     assert calls[1][1].split("\n")[3] == paint("No such directory: ~/gone", LATTE["red"])
 

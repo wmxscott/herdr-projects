@@ -17,6 +17,7 @@ import termios
 import time
 import tty
 import unicodedata
+from collections.abc import Collection
 from pathlib import Path
 
 from herdr_projects import flow, herdr, theme
@@ -35,6 +36,7 @@ from herdr_projects.cli import (
 )
 from herdr_projects.herdr import HerdrError, PopupBusy
 from herdr_projects.registry import (
+    Group,
     Project,
     Registry,
     RegistryError,
@@ -58,6 +60,11 @@ ICO_OPEN = "\uf4c3"  # nf-oct-dot
 ICO_MISSING = "\U000f0338"  # nf-md-link_off
 ICO_ERROR = "\uf421"  # nf-oct-alert
 ICO_ENTER = "\u21b5"  # downwards arrow with corner leftwards
+ICO_SHOWN = "\uf47c"  # nf-oct-chevron_down
+ICO_FOLDED = "\uf460"  # nf-oct-chevron_right
+ICO_GROUP = "\uf413"  # nf-oct-file_directory, for a group without an icon
+SPINE = "\u2502"  # box drawings light vertical
+SPINE_END = "\u2514"  # box drawings light up and right
 ELLIPSIS = "\u2026"
 # Glyph, palette colour, bold.
 STATUS_STYLES = {
@@ -66,6 +73,8 @@ STATUS_STYLES = {
     "missing": (ICO_MISSING, "red", False),
 }
 GAP = "  "
+INDENT = 2  # a spine glyph and a space
+NAME_ROOM = 6  # a header's name keeps this much before the counts go
 
 KEYS = ("ctrl-r", "ctrl-a", "ctrl-e", "ctrl-d", "ctrl-o")
 PILLS = ((ICO_ENTER, "open"), ("^a", "add"), ("^e", "edit"))
@@ -130,16 +139,71 @@ def list_width() -> int:
     return max(columns - LIST_CHROME, MIN_WIDTH)
 
 
-def rows(registry: Registry, statuses: dict[str, str], pal: Palette, width: int) -> list[str]:
-    """fzf input, `<icon>  <bare label>  <~path>` with the status at the end of `width` cells,
-    then a tab and the bare label."""
-    icons = [registry.icon(p) or "" for p in registry.projects]
-    icon_width = max(map(cell_width, icons), default=0)
-    label_width = max((cell_width(p.bare_label) for p in registry.projects), default=0)
-    return [
-        project_row(p, icon, statuses.get(p.bare_label), pal, width, (icon_width, label_width))
-        for p, icon in zip(registry.projects, icons, strict=True)
-    ]
+def rows(
+    registry: Registry,
+    statuses: dict[str, str],
+    pal: Palette,
+    width: int,
+    folded: Collection[str] = (),
+) -> list[str]:
+    """fzf input: each group's header, then its projects on a spine unless folded, then the
+    ungrouped projects. After a tab, `g:<group>` or `p:<bare label>`."""
+    members = {g.name: [p for p in registry.projects if p.group == g.name] for g in registry.groups}
+    loose = [p for p in registry.projects if p.group not in members]
+    icons = {p: registry.icon(p) or "" for p in registry.projects}
+    group_icons = [g.icon or ICO_GROUP for g in registry.groups]
+    icon_width = max(map(cell_width, [*icons.values(), *group_icons]), default=0)
+    label_end = max(
+        [INDENT + cell_width(p.name) for group in members.values() for p in group]
+        + [cell_width(p.bare_label) for p in loose],
+        default=0,
+    )
+    columns = (icon_width, label_end)
+
+    def row(project: Project, lead: str = "") -> str:
+        state = statuses.get(project.bare_label)
+        return project_row(project, icons[project], state, pal, width, columns, lead)
+
+    lines = []
+    for group in registry.groups:
+        shut = group.name in folded
+        lines.append(group_row(group, members[group.name], statuses, pal, width, icon_width, shut))
+        if not shut:
+            for i, project in enumerate(members[group.name], 1):
+                glyph = SPINE_END if i == len(members[group.name]) else SPINE
+                lines.append(row(project, paint(glyph, pal["overlay0"], dim=True) + " "))
+    return lines + [row(p) for p in loose]
+
+
+def group_row(
+    group: Group,
+    members: list[Project],
+    statuses: dict[str, str],
+    pal: Palette,
+    width: int,
+    icon_width: int,
+    folded: bool,
+) -> str:
+    """A group's header: its name, then `N projects · k open` at the end of `width` cells,
+    which give way to the name in a narrow popup."""
+    icon = group.icon or ICO_GROUP
+    head = paint(ICO_FOLDED if folded else ICO_SHOWN, pal["overlay1"]) + " "
+    head += paint(icon, pal["mauve"] if group.icon else pal["overlay1"])
+    head += " " * (icon_width - cell_width(icon)) + GAP
+    count = len(members)
+    opened = sum(statuses.get(p.bare_label) in ("active", "open") for p in members)
+    total = paint(f"{count} project{'' if count == 1 else 's'}", pal["subtext"])
+    tails = [total, ""]
+    if count:
+        tail = paint(" · ", pal["overlay0"], dim=True)
+        tail += paint(f"{opened} open", pal["green"] if opened else pal["overlay1"])
+        tails.insert(0, total + tail)
+    for tail in tails:
+        room = width - visible_width(head) - visible_width(tail) - 1
+        if room >= min(cell_width(group.name), NAME_ROOM):
+            break
+    name = paint(clip(group.name, room), pal["text"], bold=True)
+    return justify(head + name, tail, width) + "\tg:" + group.name
 
 
 def project_row(
@@ -149,19 +213,23 @@ def project_row(
     pal: Palette,
     width: int,
     columns: tuple[int, int],
+    lead: str = "",
 ) -> str:
-    """One project's row; `columns` are the icon and label widths. The path gives way first."""
-    icon_width, label_width = columns
+    """One project's row, after `lead`: its spine under a group's header, where the label is
+    just its name. `columns` are the icon width and the cell the label column ends at, counted
+    from the row's start. The path gives way first."""
+    icon_width, label_end = columns
     room = width - icon_width - len(GAP) - len(GAP) - 1
-    label_width = min(label_width, room)
-    label = clip(project.bare_label, label_width)
-    path = clip(collapse_home(project.path), room - label_width - len(GAP), left=True)
-    left = pad(icon, icon_width) + GAP + paint(label, pal["text"], bold=True)
+    label_end = min(label_end, room)
+    label_width = label_end - visible_width(lead)
+    label = clip(project.name if lead else project.bare_label, label_width)
+    path = clip(collapse_home(project.path), room - label_end - len(GAP), left=True)
+    left = lead + pad(icon, icon_width) + GAP + paint(label, pal["text"], bold=True)
     if path:
         left += " " * (label_width - cell_width(label)) + GAP
         left += paint(path, pal["overlay0"], dim=True)
     glyph, colour, bold = STATUS_STYLES.get(state or "", (" ", "text", False))
-    return justify(left, paint(glyph, pal[colour], bold=bold), width) + "\t" + project.bare_label
+    return justify(left, paint(glyph, pal[colour], bold=bold), width) + "\tp:" + project.bare_label
 
 
 def invalid_row(message: str, pal: Palette, width: int) -> str:
@@ -184,16 +252,23 @@ def statuses(registry: Registry) -> dict[str, str]:
     return {p.bare_label: s for p in registry.projects if (s := status(p, found))}
 
 
-def build(pal: Palette, width: int, known: dict[str, str] | None = None) -> tuple[list[str], bool]:
-    """The list's rows and whether the registry is valid; if not, one row with its first error.
+def build(
+    pal: Palette,
+    width: int,
+    known: dict[str, str] | None = None,
+    folded: Collection[str] = (),
+) -> tuple[list[str], bool, dict[str, str]]:
+    """The list's rows, whether the registry is valid, and the statuses they show. An invalid
+    registry is one row with its first error.
 
     Statuses are asked for unless `known`.
     """
     try:
         registry = load(default_path())
     except RegistryError as err:
-        return [invalid_row(err.messages[0], pal, width)], False
-    return rows(registry, statuses(registry) if known is None else known, pal, width), True
+        return [invalid_row(err.messages[0], pal, width)], False, {}
+    known = statuses(registry) if known is None else known
+    return rows(registry, known, pal, width, folded), True, known
 
 
 def popup(add: bool = False) -> int:
@@ -255,24 +330,35 @@ def run(add: bool = False) -> int:
     known, notice = read_statuses(), ""
     if add or os.environ.get(ADD_ENV):
         known, notice = None, handle("ctrl-a", None, pal=pal)
+    folded: set[str] = set()
+    cursor = None
     while True:
-        lines, valid = build(pal, list_width(), known)
-        known = None
+        lines, valid, known = build(pal, list_width(), known, folded)
+        at = flow.position(lines, lambda row: row.rpartition("\t")[2], cursor) if cursor else 0
         try:
-            picked = choose(lines, header(pal, valid, notice))
+            picked = choose(lines, header(pal, valid, notice), at)
         except Failure as err:
             return fail_in_popup(str(err))
         if picked is None:
             return 0
-        notice = handle(*picked, valid=valid, pal=pal)
+        key, selected = picked
+        if key == "" and selected and selected.startswith("g:"):
+            folded ^= {selected[2:]}
+            cursor, notice = selected, ""
+            continue
+        known, cursor = None, None
+        notice = handle(key, selected, valid=valid, pal=pal)
         if notice is None:
             return 0
 
 
-def choose(lines: list[str], header: str) -> tuple[str, str | None] | None:
-    """Run fzf: None when cancelled, else the key pressed and the selected bare label."""
+def choose(lines: list[str], header: str, at: int = 0) -> tuple[str, str | None] | None:
+    """Run fzf, starting on row `at` (1-based): None when cancelled, else the key pressed and
+    the selected row's id."""
     args = ["fzf", "--ansi", "--delimiter", "\t", "--with-nth", "1", "--expect", ",".join(KEYS)]
     args += ["--header", header, "--prompt", "> ", *flow.LAYOUT]
+    if at > 1:
+        args += ["--bind", f"load:pos({at})"]
     done = subprocess.run(
         args,
         input="".join(f"{line}\n" for line in lines),
@@ -289,9 +375,10 @@ def choose(lines: list[str], header: str) -> tuple[str, str | None] | None:
 
 
 def handle(
-    key: str, label: str | None, valid: bool = True, pal: Palette = theme.LATTE
+    key: str, selected: str | None, valid: bool = True, pal: Palette = theme.LATTE
 ) -> str | None:
-    """Carry out a key: None to close the popup, else a notice to show over the reloaded list."""
+    """Carry out a key on the selected row's id: None to close the popup, else a notice to
+    show over the reloaded list."""
     try:
         if key == "ctrl-o":
             return edit_registry()
@@ -302,8 +389,11 @@ def handle(
             return None
         if key == "ctrl-a":
             return flow.add(pal)
-        if label is None:
+        if selected is None:
             return ""
+        kind, _, label = selected.partition(":")
+        if kind != "p":
+            return "Select a project"
         if key == "ctrl-e":
             return flow.edit(label, pal)
         registry = load_registry()
