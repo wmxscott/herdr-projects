@@ -374,15 +374,10 @@ def test_glyphs_are_single_codepoints():
 # header
 
 
-def test_header_pills_the_main_keys_and_dims_the_rest():
+def test_header_is_one_dim_line_of_keys():
     lines = picker.header(LATTE, True).split("\n")
-    pills = [theme.pill(key, label, LATTE) for key, label in picker.PILLS]
-    assert lines == [" ", "  ".join(pills), paint(picker.HINTS, LATTE["overlay0"], dim=True), " "]
-    assert [strip(p).split()[1:4:2] for p in pills] == [
-        ["\u21b5", "open"],
-        ["^a", "add"],
-        ["^e", "edit"],
-    ]
+    assert lines == [" ", paint(picker.HINTS, LATTE["overlay0"], dim=True), " "]
+    assert picker.HINTS == "\u21b5 open · ^a add · ^e edit · ^r rename · ^d delete · ^o edit file"
 
 
 def test_header_fits_a_narrow_popup():
@@ -392,15 +387,16 @@ def test_header_fits_a_narrow_popup():
 
 
 def test_header_of_an_invalid_registry():
-    header = strip(picker.header(LATTE, False))
-    assert "^o" in header and "edit projects.toml" in header and "^a" not in header
+    lines = picker.header(LATTE, False).split("\n")
+    assert lines == [" ", paint(picker.INVALID_HINTS, LATTE["overlay0"], dim=True), " "]
+    assert picker.INVALID_HINTS == "^o edit projects.toml · esc close"
 
 
 @pytest.mark.parametrize("pal", [LATTE, MACCHIATO])
 def test_notices_are_green_and_problems_red(pal):
-    done = picker.header(pal, True, "Deleted x").split("\n")[3]
+    done = picker.header(pal, True, "Deleted x").split("\n")[2]
     assert done == paint("Deleted x", pal["green"])
-    failed = picker.header(pal, True, picker.Problem("no server")).split("\n")[3]
+    failed = picker.header(pal, True, picker.Problem("no server")).split("\n")[2]
     assert failed == paint("no server", pal["red"])
 
 
@@ -895,7 +891,7 @@ def test_run_shows_a_failure_in_red(root, herdr, session):
     open_workspaces(herdr)
     answers += [("", "p:gone"), None]
     assert picker.run() == 0
-    assert calls[1][1].split("\n")[3] == paint("No such directory: ~/gone", LATTE["red"])
+    assert calls[1][1].split("\n")[2] == paint("No such directory: ~/gone", LATTE["red"])
 
 
 def test_run_shows_an_invalid_registry(root, herdr, session):

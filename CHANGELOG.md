@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-09-27
+
+### Changed
+
+- The picker's key hints are one line, without pills. The add and edit steps lead it with what they're changing.
+
 ## [1.0.0] - 2026-09-27
 
 ### Added
@@ -23,5 +29,6 @@ All notable changes to this project are documented here. The format follows [Kee
 - `scripts/gen-glyphs.py`, which generates the icon picker's glyph list from Nerd Fonts' `glyphnames.json` (committed for Nerd Fonts 3.5.1).
 - An example `projects.toml`, checked in CI.
 
-[Unreleased]: https://github.com/wmxscott/herdr-projects/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/wmxscott/herdr-projects/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/wmxscott/herdr-projects/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/wmxscott/herdr-projects/releases/tag/v1.0.0

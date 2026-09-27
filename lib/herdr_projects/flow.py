@@ -113,8 +113,8 @@ def change(
     registry: Registry, path: str, old: Project | None = None, pal: Palette = theme.LATTE
 ) -> str:
     """Run the flow for a new project at `path`, or for `old`; returns the notice."""
-    title = theme.pill("Edit" if old else "Add", collapse_home(path), pal)
-    header = theme.header(pal, [title], HINTS)
+    title = f"{'Edit' if old else 'Add'} {collapse_home(path)}"
+    header = theme.header(pal, HINTS, title=title)
     try:
         name = ask(header, "Name: ", old.name if old else os.path.basename(path))
         group, new = pick_group(registry, header, old.group if old else None)
@@ -135,7 +135,7 @@ def change(
 def edit_group(name: str, pal: Palette = theme.LATTE) -> str:
     registry = load_registry()
     old = find_group(registry, name)
-    header = theme.header(pal, [theme.pill("Edit group", old.name, pal)], HINTS)
+    header = theme.header(pal, HINTS, title=f"Edit group {old.name}")
     try:
         name = ask(header, "Name: ", old.name)
         icon = pick_icon(registry, header, "Icon: ", skip=True, keep=old.icon, current=old.icon)
