@@ -512,3 +512,4 @@ own diff.
 - 2026-09-26 — phase A7 landed as #8
 - 2026-09-26 — phase A8 landed as #9; Done-when walked by the user and ticked (2026-09-27)
 - 2026-09-27 — Stack B added (1.0 polish); `v0.1.0` tag withdrawn, first release is 1.0.0
+- 2026-09-27 — phase B1 landed as #10
