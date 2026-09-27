@@ -458,6 +458,42 @@ README (grouped picker rendering, theme switch, group editing), CHANGELOG `1.0.0
 *Shippable when:* versions agree; user walks the popup in light and dark.
 *Split seam:* none needed.
 
+**Stack B, round 2** — user feedback after walking B1–B4 (2026-09-27; light/dark confirmed
+working). Tag `v1.0.0` after B6.
+
+**S17 — Search matches projects only.** A query never matches a group header, counts,
+pills or status glyphs; it matches a project's bare label (`group/name`). Headers are
+context, not results.
+
+**S18 — Weight and counts.** Only group names are bold; project names are normal weight.
+A header's right side is `k / N` (k open, N projects): `k` coloured (green when > 0),
+`/ N` dimmed. Status glyphs: active ``, open ``.
+
+**S19 — Worktrees count toward status, not identity.** A workspace that is a linked
+worktree of a registered project's repo marks that project *active* when focused and
+*open* when present. S3 still holds for identity: enter/`open` focuses or creates the
+main checkout's workspace, `rename`/the hook never relabel a worktree. A workspace whose
+herdr record has no `worktree` (not a git checkout at its root, e.g. a `.bare` layout
+container) is not a linked worktree even if its active pane is inside one.
+
+| Phase | Lands | Depends on |
+|---|---|---|
+| B5 | Search, weight, counts, status glyphs (S17, S18) | B4 |
+| B6 | Worktree-aware status (S19) | B5 |
+
+- [ ] B5 — Picker feedback
+- [ ] B6 — Worktree-aware status
+
+**B5 — Picker feedback**
+*Shippable when:* tests: a query can't match a header/count/glyph and does match
+`group/name`; weights and `k / N` spans per theme; README rendering regenerated.
+
+**B6 — Worktree-aware status**
+*Shippable when:* tests with real temp git repos: focused `wkt`-style worktree workspace
+→ project active; worktree workspace only → open, and enter creates the main workspace;
+pane inside a linked worktree under a non-git container workspace still resolves to the
+container project; rename/hook still skip worktree workspaces.
+
 ## Forest from the trees
 
 ### Challenge
@@ -515,3 +551,4 @@ own diff.
 - 2026-09-27 — phase B1 landed as #10
 - 2026-09-27 — phase B2 landed as #11
 - 2026-09-27 — phase B3 landed as #12
+- 2026-09-27 — phase B4 landed as #13; user feedback added as B5/B6 (S17–S19)

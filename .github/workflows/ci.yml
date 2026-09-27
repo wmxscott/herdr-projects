@@ -32,6 +32,24 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python }}
+      - name: Install fzf
+        env:
+          FZF_VERSION: 0.74.4
+        run: |
+          case "$RUNNER_OS/$RUNNER_ARCH" in
+            Linux/X64) platform=linux_amd64 sum=05e6813a337cc722c3ed07e54a764b75cc5d671e2e60459db0ba696ee5fa7504 ;;
+            Linux/ARM64) platform=linux_arm64 sum=5d673b849f494f0d64ec471d8640b153ca8849e3846a31da17abdcfce8df6b46 ;;
+            macOS/X64) platform=darwin_amd64 sum=2d392b50be66e2ab104ccd52a6072df692b1f9b9c5b449a9c098de885f32c4c5 ;;
+            macOS/ARM64) platform=darwin_arm64 sum=4f6a113bfc0c7959e0005c78d566a51afc4fcefc956f43735c62a9deb19e92ae ;;
+            *) echo "no fzf for $RUNNER_OS/$RUNNER_ARCH" >&2; exit 1 ;;
+          esac
+          archive="fzf-$FZF_VERSION-$platform.tar.gz"
+          curl -fsSLO "https://github.com/junegunn/fzf/releases/download/v$FZF_VERSION/$archive"
+          echo "$sum  $archive" | shasum -a 256 -c -
+          mkdir -p "$RUNNER_TEMP/fzf"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/fzf" fzf
+          echo "$RUNNER_TEMP/fzf" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/fzf/fzf" --version
       - name: Test
         run: uv run pytest
       - name: Smoke test
