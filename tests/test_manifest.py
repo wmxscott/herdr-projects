@@ -37,7 +37,9 @@ def test_metadata():
 
 def test_versions_agree():
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    assert MANIFEST["version"] == VERSION == pyproject["project"]["version"]
+    lock = tomllib.loads((ROOT / "uv.lock").read_text())
+    [locked] = [p["version"] for p in lock["package"] if p["name"] == PLUGIN_ID]
+    assert MANIFEST["version"] == VERSION == pyproject["project"]["version"] == locked
     version_tuple(MANIFEST["version"])
     assert version_tuple(MANIFEST["min_herdr_version"]) == OLDEST_SUPPORTED_HERDR
 

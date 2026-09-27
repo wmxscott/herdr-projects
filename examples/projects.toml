@@ -1,0 +1,44 @@
+# herdr-projects registry. Copy it into the plugin's config directory:
+#
+#   cp examples/projects.toml "$(herdr plugin config-dir herdr-projects)/projects.toml"
+#
+# Paths are absolute or start with ~. Icons are Nerd Font glyphs, written here as
+# escapes with the name the icon picker finds them by. Edits made from the picker
+# rewrite this file with the glyphs themselves, and drop comments.
+
+[[groups]]
+name = "work"
+icon = "\uf0b1" # fa-briefcase
+
+[[groups]]
+name = "oss"
+icon = "\uf401" # oct-repo
+
+# No icon of its own, so it takes its group's.
+[[projects]]
+name = "api"
+group = "work"
+path = "~/src/work/api"
+
+[[projects]]
+name = "web"
+group = "work"
+path = "~/src/work/web"
+
+# Its own icon wins over its group's.
+[[projects]]
+name = "docs"
+group = "work"
+icon = "\uf405" # oct-book
+path = "~/src/work/docs"
+
+[[projects]]
+name = "ripgrep"
+group = "oss"
+path = "~/src/oss/ripgrep"
+
+# Ungrouped, so it needs an icon of its own. Its label is just "<icon> dotfiles".
+[[projects]]
+name = "dotfiles"
+icon = "\ue5fc" # custom-folder_config
+path = "~/.dotfiles"

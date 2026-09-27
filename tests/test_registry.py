@@ -6,6 +6,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
+from conftest import ROOT
 from herdr_projects import registry
 from herdr_projects.registry import Group, Project, Registry, RegistryError
 
@@ -125,6 +126,21 @@ def test_load_reports_every_validation_error(env, tmp_path):
         'projects[1]: "icon" must not be empty',
     ]
     assert str(raised.value) == "\n".join(raised.value.messages)
+
+
+# CI's manifest job runs this too.
+def test_example_loads():
+    example = registry.load(ROOT / "examples" / "projects.toml")
+    assert [example.label(p) for p in example.projects] == [
+        "\ue5fc dotfiles",
+        "\uf401 oss/ripgrep",
+        "\uf0b1 work/api",
+        "\uf405 work/docs",
+        "\uf0b1 work/web",
+    ]
+    tsv = (ROOT / "lib" / "herdr_projects" / "glyphs.tsv").read_text(encoding="utf-8")
+    glyphs = {line.partition("\t")[0] for line in tsv.splitlines()[1:]}
+    assert {example.icon(p) for p in example.projects} <= glyphs
 
 
 # --- validation ---------------------------------------------------------------
