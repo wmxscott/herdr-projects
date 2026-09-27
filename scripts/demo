@@ -1,0 +1,189 @@
+#!/bin/sh
+# Open the picker on a made-up projects.toml, isolated from your own.
+#
+#   scripts/demo           open the picker in this terminal, to look or to screenshot
+#   scripts/demo --vhs     regenerate docs/screenshots/*.png with VHS
+#
+# Both seed a registry, its projects' directories and their statuses in a temporary
+# directory that is also HOME, and point HERDR_BIN_PATH and PATH at a `herdr` that
+# always fails, so nothing reads your projects or reaches Herdr, even from inside it.
+# Needs Python 3.11 or newer and fzf; --vhs also needs vhs (`brew install vhs`) and
+# FiraCode Nerd Font.
+set -eu
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/herdr-projects-demo.XXXXXX")
+trap 'rm -rf "$tmp"' EXIT
+mkdir -p "$tmp/bin" "$tmp/config" "$tmp/state"
+
+cat >"$tmp/bin/herdr" <<'EOF'
+#!/bin/sh
+echo "herdr: disabled in the herdr-projects demo" >&2
+exit 1
+EOF
+chmod +x "$tmp/bin/herdr"
+
+# work/docs has no directory, so it shows as missing.
+cat >"$tmp/config/projects.toml" <<'EOF'
+[[groups]]
+name = "work"
+icon = ""
+
+[[groups]]
+name = "oss"
+icon = ""
+
+[[groups]]
+name = "personal"
+icon = ""
+
+[[groups]]
+name = "sandbox"
+icon = ""
+
+[[projects]]
+name = "api"
+group = "work"
+path = "~/src/work/api"
+
+[[projects]]
+name = "web"
+group = "work"
+path = "~/src/work/web"
+
+[[projects]]
+name = "docs"
+group = "work"
+icon = ""
+path = "~/src/work/docs"
+
+[[projects]]
+name = "infra"
+group = "work"
+icon = "\U000f1062"
+path = "~/src/work/infra"
+
+[[projects]]
+name = "mobile"
+group = "work"
+icon = "\U000f011c"
+path = "~/src/work/mobile"
+
+[[projects]]
+name = "ripgrep"
+group = "oss"
+path = "~/src/oss/ripgrep"
+
+[[projects]]
+name = "helix"
+group = "oss"
+path = "~/src/oss/helix"
+
+[[projects]]
+name = "blog"
+group = "personal"
+icon = "\U000f06d3"
+path = "~/src/personal/blog"
+
+[[projects]]
+name = "recipes"
+group = "personal"
+path = "~/src/personal/recipes"
+
+[[projects]]
+name = "dotfiles"
+icon = ""
+path = "~/.dotfiles"
+EOF
+for dir in work/api work/web work/infra work/mobile oss/ripgrep oss/helix \
+    personal/blog personal/recipes; do
+    mkdir -p "$tmp/src/$dir"
+done
+mkdir -p "$tmp/.dotfiles"
+
+# What the popup action would have asked Herdr for. The picker deletes this file once
+# it has read it, so each run of the picker gets a fresh one.
+statuses() {
+    printf '%s\n' '{"work/api": "active", "work/web": "open", "work/docs": "missing",' \
+        '"oss/ripgrep": "open", "personal/blog": "open"}' >"$tmp/statuses.json"
+}
+
+# Run once here so the launcher finds Python on your PATH and remembers it in the
+# state directory, where the empty environment below finds it too.
+HERDR_PLUGIN_STATE_DIR="$tmp/state" "$root/bin/herdr-projects" --version >/dev/null
+
+if [ "${1:-}" != "--vhs" ]; then
+    statuses
+    HOME="$tmp" \
+        PATH="$tmp/bin:$root/bin:$PATH" \
+        HERDR_BIN_PATH="$tmp/bin/herdr" \
+        HERDR_PLUGIN_CONFIG_DIR="$tmp/config" \
+        HERDR_PLUGIN_STATE_DIR="$tmp/state" \
+        HERDR_PROJECTS_STATUS="$tmp/statuses.json" \
+        herdr-projects picker
+    exit
+fi
+
+# The first executable on PATH that is not a script: a wrapper around fzf
+# would carry its own config into the shot.
+binary() (
+    IFS=:
+    set -f
+    for dir in $PATH; do
+        if [ -x "$dir/$1" ] && [ "$(head -c 2 "$dir/$1")" != "#!" ]; then
+            echo "$dir/$1"
+            exit
+        fi
+    done
+    echo "demo: $1 not found on PATH" >&2
+    exit 1
+)
+
+for tool in vhs ttyd ffmpeg fzf; do
+    ln -s "$(binary "$tool")" "$tmp/bin/$tool"
+done
+
+# Catppuccin for fzf's own chrome, to match the picker's palette.
+latte="--color=bg+:#ccd0da,bg:#eff1f5,spinner:#dc8a78,hl:#d20f39"
+latte="$latte,fg:#4c4f69,header:#4c4f69,info:#8839ef,pointer:#dc8a78"
+latte="$latte,marker:#7287fd,fg+:#4c4f69,prompt:#8839ef,hl+:#d20f39"
+latte="$latte,selected-bg:#bcc0cc,border:#9ca0b0,label:#4c4f69"
+macchiato="--color=bg+:#363a4f,bg:#24273a,spinner:#f4dbd6,hl:#ed8796"
+macchiato="$macchiato,fg:#cad3f5,header:#cad3f5,info:#c6a0f6,pointer:#f4dbd6"
+macchiato="$macchiato,marker:#b7bdf8,fg+:#cad3f5,prompt:#c6a0f6,hl+:#ed8796"
+macchiato="$macchiato,selected-bg:#494d64,border:#6e738d,label:#cad3f5"
+
+# The tape is shared; only its theme differs, so it goes first.
+shoot() {
+    theme=$1 vhs_theme=$2 fzf_colors=$3
+    statuses
+    { echo "Set Theme \"$vhs_theme\""; cat "$root/docs/screenshots/picker.tape"; } >"$tmp/shot.tape"
+    # A from-scratch environment: nothing from your shell, prompt or home
+    # directory can end up in the frame. The tape saves into the working directory.
+    (
+        cd "$tmp"
+        env -i \
+            PATH="$tmp/bin:$root/bin:/usr/bin:/bin" \
+            HOME="$tmp" \
+            TMPDIR="$tmp" \
+            TERM=xterm-256color \
+            COLORTERM=truecolor \
+            LANG=en_US.UTF-8 \
+            PS1='$ ' \
+            FZF_DEFAULT_OPTS="$fzf_colors" \
+            HERDR_BIN_PATH="$tmp/bin/herdr" \
+            HERDR_PLUGIN_CONFIG_DIR="$tmp/config" \
+            HERDR_PLUGIN_STATE_DIR="$tmp/state" \
+            HERDR_PROJECTS_STATUS="$tmp/statuses.json" \
+            HERDR_PROJECTS_THEME="$theme" \
+            vhs --quiet --output "$tmp/picker.gif" "$tmp/shot.tape"
+    )
+    # Lossless recompression; ffmpeg is already here as a VHS dependency.
+    shot="$root/docs/screenshots/picker-$theme.png"
+    "$tmp/bin/ffmpeg" -loglevel error -y -i "$tmp/picker.png" \
+        -compression_level 100 -pred mixed "$shot"
+    echo "wrote ${shot#"$root"/}"
+}
+
+shoot light "Catppuccin Latte" "$latte"
+shoot dark "Catppuccin Macchiato" "$macchiato"
