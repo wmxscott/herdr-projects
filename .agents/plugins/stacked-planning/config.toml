@@ -1,0 +1,69 @@
+# Stacked-planning configuration, one top-level table per tool; each tool reads its own
+# table and skips the rest.
+#
+# From the stacked-planning plugin's config.example.toml; its DIFF_CENSUS.md documents
+# every key.
+
+# The PR size gate, diff_census.py: 400 production lines and 1200 all-in, additions plus
+# deletions, each with a 10% grace band that warns before it fails.
+[diff_census]
+version = 1
+
+# Global exclusions: out of `total` as well as out of every group. Only what nobody
+# reviews under any policy belongs here. `extend_builtin` keeps the shipped list
+# (lockfiles, vendor/, node_modules/, minified output, snapshots) and adds to it.
+[diff_census.global]
+extend_builtin = true
+exclude = [
+  # Lockfiles the built-in list does not already name.
+  { name = ["bun.lockb", "flake.lock", "Gemfile.lock", "go.work.sum", "mix.lock", "npm-shrinkwrap.json", "packages.lock.json", "pdm.lock", "Pipfile.lock", "uv.lock"] },
+  # Machine-written source.
+  { name = ["*.pb.go", "*.pb.cc", "*.pb.h", "*_pb2.py", "*_pb2_grpc.py", "*.gen.go", "*.g.dart", "*.freezed.dart", "*.generated.*", "*_generated.*"] },
+  # Build output and vendored trees, at any depth.
+  { path = ["**/.next/**", "**/__pycache__/**", "**/build/**", "**/coverage/**", "**/dist/**", "**/out/**", "**/target/**", "**/third_party/**"] },
+  # General documentation, except the plan artifact under docs/plans/: editing the plan is
+  # review surface and is counted. A glob cannot say "except", so the carve-out is a
+  # lookahead over the whole path. Drop these rules in a repository whose product is prose.
+  { name = ["README*", "CHANGELOG*", "LICENSE*", "AUTHORS", "CONTRIBUTORS", "NOTICE"] },
+  { path_regex = '^(?!(.*/)?docs/plans/).*\.(md|mdx|rst|adoc|txt)$' },
+  { path_regex = '(^|/)doc/' },
+  { path_regex = '(^|/)docs/(?!plans/)' },
+  # Generated from the nerd-fonts glyph list by scripts/gen-glyphs.py.
+  { path = ["lib/herdr_projects/glyphs.tsv"] },
+]
+
+# Matchers: named definitions with no budget. `report = true` puts one in the report.
+
+# Tests and fixtures: outside the production budget, inside `total`.
+[diff_census.matchers.tests]
+report = true
+rules = [
+  { name = ["*.test.*", "*.spec.*", "*_test.go", "*_test.py", "test_*.py", "*_test.exs", "*_spec.rb", "conftest.py"] },
+  { path = ["**/__fixtures__/**", "**/__mocks__/**", "**/__tests__/**", "**/e2e/**", "**/fixtures/**", "**/test/**", "**/testdata/**", "**/tests/**"] },
+]
+
+# The plan artifact: counted in `total`, outside the production budget.
+[diff_census.matchers.plan]
+report = true
+rules = [
+  { path = ["**/docs/plans/**"] },
+]
+
+# How many lines `production` leaves out as comments.
+[diff_census.matchers.comments]
+report = true
+rules = [
+  { comment = ["only", "trailing"] },
+]
+
+# Production: everything in `total` that is not a test, the plan or a comment. `include`
+# is omitted, which means match-all, so a new directory needs no rule to be counted.
+[diff_census.groups.production]
+limit = { changed = 400, grace = 0.10 }
+exclude = [
+  { matches = ["tests", "plan"] },
+  { comment = ["only", "trailing"] },
+]
+
+[diff_census.limits]
+total = { changed = 1200, grace = 0.10 }
